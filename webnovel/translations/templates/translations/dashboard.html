@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Translation Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Translation Dashboard</h1>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Books in Translation</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Author</th>
+                                    <th>Status</th>
+                                    <th>Progress</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for book in books %}
+                                <tr>
+                                    <td>{{ book.title }}</td>
+                                    <td>{{ book.author }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ book.status|lower }}-subtle">
+                                            {{ book.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="progress">
+                                            <div class="progress-bar" role="progressbar"
+                                                style="width: {{ book.processing_progress }}%"
+                                                aria-valuenow="{{ book.processing_progress }}" aria-valuemin="0"
+                                                aria-valuemax="100">
+                                                {{ book.processing_progress }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'translations:book_chapters' book.id %}"
+                                            class="btn btn-sm btn-primary">
+                                            View Chapters
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center">
+                                        No books currently in translation.
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

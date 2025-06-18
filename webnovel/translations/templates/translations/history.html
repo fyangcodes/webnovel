@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Translation History{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Translation History</h1>
+    <h4>{{ translation.chapter.book.title }} - Chapter {{ translation.chapter.chapter_number }}</h4>
+    <p class="text-muted">Language: {{ translation.target_language }}</p>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="timeline">
+                {% for edit in history %}
+                <div class="timeline-item">
+                    <div class="timeline-marker"></div>
+                    <div class="timeline-content">
+                        <h3 class="timeline-title">Version {{ edit.translation.version }}</h3>
+                        <p class="timeline-info">
+                            Edited by {{ edit.edited_by.username }} on {{ edit.edited_at|date:"F j, Y, P" }}
+                        </p>
+                        {% if edit.comment %}
+                        <div class="timeline-comment">
+                            <strong>Comment:</strong> {{ edit.comment }}
+                        </div>
+                        {% endif %}
+                        <div class="timeline-diff mt-3">
+                            {{ edit.diff_html|safe }}
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p>No edit history available.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .timeline {
+        position: relative;
+        padding: 20px 0;
+    }
+
+    .timeline-item {
+        position: relative;
+        padding: 20px 0;
+        border-left: 2px solid #e9ecef;
+        margin-left: 20px;
+    }
+
+    .timeline-marker {
+        position: absolute;
+        left: -7px;
+        width: 12px;
+        height: 12px;
+        background: #007bff;
+        border-radius: 50%;
+    }
+
+    .timeline-content {
+        margin-left: 30px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 4px;
+    }
+
+    .timeline-title {
+        font-size: 1.2rem;
+        margin-bottom: 5px;
+    }
+
+    .timeline-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+    }
+
+    .timeline-comment {
+        padding: 10px;
+        background: #fff;
+        border-radius: 4px;
+        margin-bottom: 10px;
+    }
+
+    .timeline-diff {
+        overflow-x: auto;
+    }
+
+    .timeline-diff table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .timeline-diff td {
+        padding: 2px 5px;
+        font-family: monospace;
+        white-space: pre-wrap;
+    }
+
+    .timeline-diff .diff_header {
+        background-color: #f1f8ff;
+    }
+
+    .timeline-diff .diff_add {
+        background-color: #e6ffed;
+    }
+
+    .timeline-diff .diff_sub {
+        background-color: #ffeef0;
+    }
+</style>
+{% endblock %}

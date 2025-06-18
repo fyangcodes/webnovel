@@ -1,0 +1,88 @@
+{% extends "books/base_books.html" %}
+{% load static %}
+
+{% block title %}{{ book.title }}{% endblock %}
+
+{% block books_content %}
+<div class="mb-4">
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <h1>{{ book.title }}</h1>
+            <h5 class="text-muted">by {{ book.author }}</h5>
+        </div>
+        <div class="btn-group" role="group">
+            <a href="{% url 'books:book_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Books
+            </a>
+            <a href="{% url 'books:book_delete' book.id %}" class="btn btn-outline-danger">
+                <i class="fas fa-trash"></i> Delete Book
+            </a>
+        </div>
+    </div>
+
+    <div class="mt-3">
+        <span class="badge bg-{{ book.status|lower }}">
+            {{ book.get_status_display }}
+        </span>
+        {% if book.processing_progress > 0 and book.processing_progress < 100 %}
+        <div class="progress mt-2" style="height: 20px;">
+            <div class="progress-bar" role="progressbar" 
+                 style="width: {{ book.processing_progress }}%"
+                 aria-valuenow="{{ book.processing_progress }}" 
+                 aria-valuemin="0" 
+                 aria-valuemax="100">
+                {{ book.processing_progress }}%
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if book.error_message %}
+    <div class="alert alert-danger mt-3" role="alert">
+        {{ book.error_message }}
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title mb-0">Chapters</h3>
+    </div>
+    <div class="list-group list-group-flush">
+        {% for chapter in book.chapters.all %}
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1">{{ chapter.title }}</h5>
+                    <small class="text-muted">
+                        Words: {{ chapter.word_count }}
+                        {% if chapter.translation_status %}
+                        | Translation Status: {{ chapter.get_translation_status_display }}
+                        {% endif %}
+                    </small>
+                </div>
+                <div class="btn-group" role="group">
+                    <a href="{% url 'books:chapter_detail' chapter.id %}" 
+                       class="btn btn-sm btn-outline-primary">
+                        View
+                    </a>
+                    {% if chapter.can_translate %}
+                    <a href="{% url 'translations:translate_chapter' chapter.id %}" 
+                       class="btn btn-sm btn-outline-success">
+                        Translate
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-center py-4">
+            <p class="mb-0 text-muted">No chapters available yet.</p>
+            {% if book.status == 'UPLOADED' %}
+            <small class="text-muted">The book is being processed. Please wait...</small>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %} 

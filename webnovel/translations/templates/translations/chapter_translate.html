@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Translate Chapter - {{ chapter.book.title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .translation-container {
+        display: flex;
+        gap: 1rem;
+        height: calc(100vh - 200px);
+    }
+
+    .translation-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .translation-header {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+    }
+
+    .translation-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+    }
+
+    .translation-editor {
+        height: 100%;
+        font-family: monospace;
+        resize: none;
+    }
+
+    .chapter-nav {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+    }
+
+    .abstract-panel {
+        background: #fff;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="chapter-nav">
+        {% if previous_chapter %}
+        <a href="{% url 'translations:translate_chapter' previous_chapter.id %}" class="btn btn-outline-primary">
+            ← Previous Chapter
+        </a>
+        {% else %}
+        <div></div>
+        {% endif %}
+
+        <h2 class="text-center">{{ chapter.book.title }} - Chapter {{ chapter.chapter_number }}</h2>
+
+        {% if next_chapter %}
+        <a href="{% url 'translations:translate_chapter' next_chapter.id %}" class="btn btn-outline-primary">
+            Next Chapter →
+        </a>
+        {% else %}
+        <div></div>
+        {% endif %}
+    </div>
+
+    {% if chapter.abstract %}
+    <div class="abstract-panel">
+        <h5>Chapter Abstract</h5>
+        <p>{{ chapter.abstract }}</p>
+        {% if chapter.key_terms %}
+        <h6>Key Terms</h6>
+        <ul class="list-inline">
+            {% for term in chapter.key_terms %}
+            <li class="list-inline-item badge bg-info">{{ term }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="translation-container">
+        <!-- Original Text -->
+        <div class="translation-column">
+            <div class="translation-header">
+                <h5>Original Text ({{ chapter.book.original_language }})</h5>
+            </div>
+            <div class="translation-content">
+                <pre>{{ chapter.original_text }}</pre>
+            </div>
+        </div>
+
+        <!-- English Translation -->
+        <div class="translation-column">
+            <div class="translation-header">
+                <h5>English Translation</h5>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Version: {{ en_translation.version|default:"New" }}</span>
+                    {% if en_translation %}
+                    <a href="{% url 'translations:history' en_translation.id %}" class="btn btn-sm btn-info">
+                        View History
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="translation-content">
+                <form method="post" class="h-100" id="en-translation-form">
+                    {% csrf_token %}
+                    <textarea name="translated_text" class="form-control translation-editor"
+                        data-language="en">{{ en_translation.translated_text|default:"" }}</textarea>
+                    <div class="mt-2">
+                        <textarea name="comment" class="form-control" rows="2"
+                            placeholder="Add a comment about your changes (optional)"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-2">Save English Translation</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- German Translation -->
+        <div class="translation-column">
+            <div class="translation-header">
+                <h5>German Translation</h5>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Version: {{ de_translation.version|default:"New" }}</span>
+                    {% if de_translation %}
+                    <a href="{% url 'translations:history' de_translation.id %}" class="btn btn-sm btn-info">
+                        View History
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="translation-content">
+                <form method="post" class="h-100" id="de-translation-form">
+                    {% csrf_token %}
+                    <textarea name="translated_text" class="form-control translation-editor"
+                        data-language="de">{{ de_translation.translated_text|default:"" }}</textarea>
+                    <div class="mt-2">
+                        <textarea name="comment" class="form-control" rows="2"
+                            placeholder="Add a comment about your changes (optional)"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-2">Save German Translation</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const forms = document.querySelectorAll('form');
+
+        forms.forEach(form => {
+            form.addEventListener('submit', async function (e) {
+                e.preventDefault();
+
+                const language = this.querySelector('.translation-editor').dataset.language;
+                const formData = new FormData(this);
+
+                try {
+                    const response = await fetch(`{% url 'translations:save_translation' chapter.id %}${language}/`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Show success message
+                        alert('Translation saved successfully!');
+                        // Update version display
+                        const versionSpan = this.closest('.translation-column')
+                            .querySelector('.translation-header span');
+                        versionSpan.textContent = `Version: ${data.version}`;
+                    } else {
+                        alert('Error saving translation: ' + data.error);
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error saving translation. Please try again.');
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}
