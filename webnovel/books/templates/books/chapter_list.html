@@ -1,0 +1,48 @@
+{% extends "books/base_books.html" %}
+{% load static %}
+
+{% block title %}Chapters for {{ book.title }}{% endblock %}
+
+{% block books_content %}
+<div class="mb-4">
+    <h1>{{ book.title }}</h1>
+    <h5 class="text-muted">by {{ book.author }}</h5>
+    <a href="{% url 'books:book_detail' book.id %}" class="btn btn-secondary mb-3">Back to Book Detail</a>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0">All Chapters</h3>
+    </div>
+    <div class="list-group list-group-flush">
+        {% for chapter in chapters %}
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1">{{ chapter.title }}</h5>
+                    <small class="text-muted">
+                        Words: {{ chapter.word_count }}
+                    </small>
+                </div>
+                <div class="btn-group" role="group">
+                    <a href="{% url 'books:chapter_detail' chapter.id %}" 
+                       class="btn btn-sm btn-outline-primary">
+                        View
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-center py-4">
+            <p class="mb-0 text-muted">No chapters available yet.</p>
+            {% if book.status == 'UPLOADED' %}
+            <small class="text-muted">The book is being processed. Please wait...</small>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<script>
+// Optionally, add JS to select/deselect all checkboxes, handle form submission, etc.
+</script>
+{% endblock %} 

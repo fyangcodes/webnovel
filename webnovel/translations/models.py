@@ -2,13 +2,14 @@ from django.conf import settings
 from django.db import models
 
 from books.models import Chapter
+from languages.models import Language
 
 
 class Translation(models.Model):
     chapter = models.ForeignKey(
         Chapter, on_delete=models.CASCADE, related_name="translations"
     )
-    target_language = models.CharField(max_length=10)
+    target_language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name='translations')
     translated_text = models.TextField()
     is_ai_generated = models.BooleanField(default=True)
     version = models.IntegerField(default=1)

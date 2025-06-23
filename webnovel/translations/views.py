@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import ListView, DetailView
 from django.utils.html import escape
 from difflib import HtmlDiff
+from django.utils.decorators import method_decorator
 
 from books.models import Book, Chapter
 from .models import Translation, EditHistory
@@ -117,3 +118,12 @@ def compare_versions(request, history_id):
         "translations/compare.html",
         {"edit": edit, "diff_html": edit.diff_html},
     )
+
+
+def chapter_translations(request, chapter_id):
+    chapter = get_object_or_404(Chapter, id=chapter_id)
+    translations = chapter.translations.all()
+    return render(request, 'translations/chapter_translations.html', {
+        'chapter': chapter,
+        'translations': translations,
+    })

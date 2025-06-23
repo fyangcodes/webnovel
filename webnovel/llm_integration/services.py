@@ -25,6 +25,20 @@ def decode_gb_text(input_data, encoding="gbk"):
 class LLMTranslationService:
     """Service for handling LLM API calls for translation and text processing"""
 
+    LANGUAGE_CODE_TO_NAME = {
+        "en": "English",
+        "cn": "Chinese",
+        "zh": "Chinese",
+        "zh-CN": "Chinese",
+        "zh-Hans": "Chinese",
+        "zh-Hant": "Chinese (Traditional)",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "it": "Italian",
+        # Add more as needed
+    }
+
     def __init__(self, api_key=None, model="gpt-3.5-turbo"):
         self.api_key = api_key or getattr(settings, "LLM_API_KEY", None)
         self.model = model
@@ -146,12 +160,14 @@ class LLMTranslationService:
             })
         return chapters
 
-    def generate_chapter_abstract(self, chapter_text: str) -> str:
+    def generate_chapter_abstract(self, chapter_text: str, target_language: str = None) -> str:
         """
-        Generate a summary/abstract of the chapter for translation context
+        Generate a summary/abstract of the chapter in the specified target language (default: original language)
         """
+        language_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language) if target_language else "the original language"
+        language_instruction = f" in {language_name}" if target_language else " in the original language of chapter text"
         prompt = f"""
-        Please create a concise abstract (2-3 sentences) of the following chapter that will help maintain consistency in translation. 
+        Please create a concise abstract (2-3 sentences){language_instruction} of the following chapter that will help maintain consistency in translation. 
         Focus on:
         - Main themes and topics
         - Key characters or concepts
@@ -161,7 +177,7 @@ class LLMTranslationService:
         Chapter text:
         {chapter_text[:2000]}...
         """
-
+        system_prompt = f"You are a helpful assistant that creates concise summaries for translation context. Always respond in {language_name}."
         try:
             if not self.client:
                 raise Exception("OpenAI client not initialized. No API key provided.")
@@ -170,7 +186,7 @@ class LLMTranslationService:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful assistant that creates concise summaries for translation context.",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -182,14 +198,16 @@ class LLMTranslationService:
 
         except Exception as e:
             logger.error(f"Error generating abstract: {str(e)}")
-            return f"Chapter abstract (auto-generated): {chapter_text[:200]}..."
+            return f"Chapter abstract (auto-generated excerpt): {chapter_text[:200]}..."
 
-    def extract_key_terms(self, chapter_text: str) -> List[str]:
+    def extract_key_terms(self, chapter_text: str, target_language: str = None) -> List[str]:
         """
-        Extract key terms that should be consistently translated
+        Extract key terms that should be consistently translated, in the specified target language (default: original language)
         """
+        language_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language) if target_language else "the original language"
+        language_instruction = f" in {language_name}" if target_language else " in the original language"
         prompt = f"""
-        Please identify 5-10 key terms from the following text that are important for consistent translation. 
+        Please identify 5-10 key terms{language_instruction} from the following text that are important for consistent translation. 
         Focus on:
         - Proper nouns (names, places)
         - Technical terms
@@ -201,7 +219,7 @@ class LLMTranslationService:
         Text:
         {chapter_text[:1500]}...
         """
-
+        system_prompt = f"You are a helpful assistant that identifies key terms for translation consistency. Always respond in {language_name}."
         try:
             if not self.client:
                 raise Exception("OpenAI client not initialized. No API key provided.")
@@ -210,7 +228,7 @@ class LLMTranslationService:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a helpful assistant that identifies key terms for translation consistency.",
+                        "content": system_prompt,
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -240,15 +258,7 @@ class LLMTranslationService:
         """
         Translate chapter text to target language with context
         """
-        language_names = {
-            "en": "English",
-            "de": "German",
-            "fr": "French",
-            "es": "Spanish",
-            "it": "Italian",
-        }
-
-        target_lang_name = language_names.get(target_language, target_language)
+        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
 
         context_prompt = (
             f"\n\nContext from previous chapters:\n{context_abstract}"

@@ -9,6 +9,9 @@ from django.views.generic import ListView, DetailView, CreateView, DeleteView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.contrib import messages
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from llm_integration.services import LLMTranslationService
 
 from .models import Book, Chapter
 from .serializers import (
@@ -45,7 +48,7 @@ class BookDetailView(LoginRequiredMixin, DetailView):
 class BookUploadView(LoginRequiredMixin, CreateView):
     model = Book
     template_name = 'books/book_upload.html'
-    fields = ['title', 'author', 'uploaded_file']
+    fields = ['title', 'author', 'uploaded_file', 'original_language']
     success_url = reverse_lazy('books:book_list')
 
     def form_valid(self, form):
@@ -86,7 +89,13 @@ class ChapterListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['book'] = self.book
+        context['chapters'] = list(context['chapters'])
         return context
+
+    @method_decorator(csrf_exempt)
+    def post(self, request, *args, **kwargs):
+        # Remove translation logic from upload pipeline
+        return redirect(request.path)
 
 class ChapterDetailView(LoginRequiredMixin, DetailView):
     model = Chapter
@@ -99,6 +108,8 @@ class ChapterDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['book'] = self.object.book
+        context['excerpt'] = self.object.excerpt
+        context['original_text'] = self.object.original_text
         return context
 
 # Existing ViewSets

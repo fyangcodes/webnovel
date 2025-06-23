@@ -17,4 +17,9 @@ urlpatterns = [
     ),
     path("history/<int:translation_id>/", views.translation_history, name="history"),
     path("compare/<int:history_id>/", views.compare_versions, name="compare_versions"),
+    path(
+        "chapter/<int:chapter_id>/translations/",
+        views.chapter_translations,
+        name="chapter_translations",
+    ),
 ]

@@ -5,6 +5,7 @@ from django.conf import settings
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+from languages.models import Language
 
 
 class Book(models.Model):
@@ -21,7 +22,7 @@ class Book(models.Model):
 
     title = models.CharField(max_length=200)
     author = models.CharField(max_length=100)
-    original_language = models.CharField(max_length=10, default="auto")
+    original_language = models.ForeignKey(Language, on_delete=models.SET_NULL, null=True, related_name='books', help_text='Original language of the book')
     isbn = models.CharField(max_length=20, blank=True, null=True)
     description = models.TextField(blank=True)
 
@@ -97,26 +98,13 @@ class Chapter(models.Model):
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     chapter_number = models.PositiveIntegerField()
     title = models.CharField(max_length=200, blank=True)
-
-    # Content storage (hybrid approach)
-    original_text = (
-        models.TextField()
-    )  # Store in DB for now, can migrate to files later
-    excerpt = models.TextField(max_length=1000, blank=True)  # For search
-
-    # AI-generated context
-    abstract = models.TextField(
-        blank=True, help_text="AI-generated summary for translation context"
-    )
-    key_terms = models.JSONField(
-        default=list, help_text="Important terms for consistent translation"
-    )
-
-    # Metadata
+    original_text = models.TextField()
+    excerpt = models.TextField(max_length=1000, blank=True)
+    abstract = models.TextField(blank=True, help_text="AI-generated summary for translation context")
+    key_terms = models.JSONField(default=list, help_text="Important terms for consistent translation")
     word_count = models.PositiveIntegerField(default=0)
     char_count = models.PositiveIntegerField(default=0)
     processing_status = models.CharField(max_length=20, default="pending")
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -135,7 +123,6 @@ class Chapter(models.Model):
         if self.original_text:
             self.word_count = len(self.original_text.split())
             self.char_count = len(self.original_text)
-            # Create excerpt from first 1000 characters
             self.excerpt = self.original_text[:1000]
         super().save(*args, **kwargs)
 
@@ -144,7 +131,12 @@ class Chapter(models.Model):
         return self.translations.exists()
 
     def get_translation(self, language):
-        """Get latest translation for specified language"""
+        """Get latest translation for specified language (accepts Language instance or code)"""
+        if isinstance(language, str):
+            try:
+                language = Language.objects.get(code=language)
+            except Language.DoesNotExist:
+                return None
         return (
             self.translations.filter(target_language=language)
             .order_by("-version")

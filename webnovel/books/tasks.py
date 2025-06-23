@@ -3,6 +3,7 @@ from django.utils import timezone
 from .models import Book, Chapter
 from .utils import extract_text_from_file
 from llm_integration.services import LLMTranslationService
+from translations.models import Translation
 import logging
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ def process_book_async(book_id):
 
 @shared_task
 def process_chapter_async(chapter_id):
-    """Process individual chapter - generate abstract and translations"""
+    """Process individual chapter - generate abstract and key terms only (no translation)"""
     try:
         chapter = Chapter.objects.get(id=chapter_id)
         chapter.processing_status = "processing"
@@ -86,24 +87,20 @@ def process_chapter_async(chapter_id):
 
         llm_service = LLMTranslationService()
 
-        # Generate abstract for context
-        abstract = llm_service.generate_chapter_abstract(chapter.original_text)
+        # Generate abstract for context (in original language)
+        original_lang = chapter.book.original_language.code if chapter.book.original_language else None
+        abstract = llm_service.generate_chapter_abstract(chapter.original_text, target_language=original_lang)
         chapter.abstract = abstract
         chapter.processing_status = "abstract_complete"
         chapter.save()
 
-        # Generate key terms
-        key_terms = llm_service.extract_key_terms(chapter.original_text)
+        # Generate key terms (in original language)
+        key_terms = llm_service.extract_key_terms(chapter.original_text, target_language=original_lang)
         chapter.key_terms = key_terms
         chapter.processing_status = "analyzed"
         chapter.save()
 
-        # This will be extended when we add the translations app
-        # For now, just mark as complete
-        chapter.processing_status = "complete"
-        chapter.save()
-
-        logger.info(f"Successfully processed chapter {chapter.id}")
+        logger.info(f"Successfully analyzed chapter {chapter.id}")
 
     except Exception as e:
         logger.error(f"Error processing chapter {chapter_id}: {str(e)}")
@@ -119,7 +116,7 @@ def generate_chapter_abstract_async(chapter_id):
         chapter = Chapter.objects.get(id=chapter_id)
         llm_service = LLMTranslationService()
 
-        abstract = llm_service.generate_chapter_abstract(chapter.original_text)
+        abstract = llm_service.generate_chapter_abstract(chapter.original_text, target_language=chapter.book.original_language.code if chapter.book.original_language else None)
         chapter.abstract = abstract
         chapter.save()
 
