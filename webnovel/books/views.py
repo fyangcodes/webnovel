@@ -23,49 +23,55 @@ from .serializers import (
 from .tasks import process_book_async
 from .utils import extract_text_from_file
 
+
 # Regular Django Views
 class BookListView(LoginRequiredMixin, ListView):
     model = Book
-    template_name = 'books/book_list.html'
-    context_object_name = 'books'
+    template_name = "books/book_list.html"
+    context_object_name = "books"
 
     def get_queryset(self):
         return Book.objects.filter(user=self.request.user)
 
+
 class BookDetailView(LoginRequiredMixin, DetailView):
     model = Book
-    template_name = 'books/book_detail.html'
-    context_object_name = 'book'
+    template_name = "books/book_detail.html"
+    context_object_name = "book"
 
     def get_queryset(self):
         return Book.objects.filter(user=self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['chapters'] = self.object.chapters.all().order_by('chapter_number')
+        context["chapters"] = self.object.chapters.all().order_by("chapter_number")
         return context
+
 
 class BookUploadView(LoginRequiredMixin, CreateView):
     model = Book
-    template_name = 'books/book_upload.html'
-    fields = ['title', 'author', 'uploaded_file', 'original_language']
-    success_url = reverse_lazy('books:book_list')
+    template_name = "books/book_upload.html"
+    fields = ["title", "author", "uploaded_file", "original_language"]
+    success_url = reverse_lazy("books:book_list")
 
     def form_valid(self, form):
         form.instance.user = self.request.user
-        form.instance.status = 'uploaded'
+        form.instance.status = "uploaded"
         response = super().form_valid(form)
-        
+
         # Start async processing
         process_book_async.delay(self.object.id)
-        messages.success(self.request, 'Book uploaded successfully and is being processed.')
-        
+        messages.success(
+            self.request, "Book uploaded successfully and is being processed."
+        )
+
         return response
+
 
 class BookDeleteView(LoginRequiredMixin, DeleteView):
     model = Book
-    template_name = 'books/book_confirm_delete.html'
-    success_url = reverse_lazy('books:book_list')
+    template_name = "books/book_confirm_delete.html"
+    success_url = reverse_lazy("books:book_list")
 
     def get_queryset(self):
         return Book.objects.filter(user=self.request.user)
@@ -74,43 +80,77 @@ class BookDeleteView(LoginRequiredMixin, DeleteView):
         book = self.get_object()
         if book.uploaded_file:
             book.uploaded_file.delete()
-        messages.success(request, 'Book deleted successfully.')
+        messages.success(request, "Book deleted successfully.")
         return super().delete(request, *args, **kwargs)
+
 
 class ChapterListView(LoginRequiredMixin, ListView):
     model = Chapter
-    template_name = 'books/chapter_list.html'
-    context_object_name = 'chapters'
+    template_name = "books/chapter_list.html"
+    context_object_name = "chapters"
 
     def get_queryset(self):
-        self.book = get_object_or_404(Book, id=self.kwargs['book_id'], user=self.request.user)
-        return Chapter.objects.filter(book=self.book).order_by('chapter_number')
+        self.book = get_object_or_404(
+            Book, id=self.kwargs["book_id"], user=self.request.user
+        )
+        return Chapter.objects.filter(book=self.book).order_by("chapter_number")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['book'] = self.book
-        context['chapters'] = list(context['chapters'])
+        context["book"] = self.book
+        context["chapters"] = list(context["chapters"])
+        # Add available languages for the dropdown
+        from languages.models import Language
+        context["languages"] = Language.objects.all()
+        # Add translations per chapter for template
+        from translations.models import Translation
+        chapter_translations = {}
+        for chapter in context["chapters"]:
+            translations = chapter.translations.all()
+            chapter_translations[chapter.id] = {t.target_language.code: t for t in translations}
+        context["chapter_translations"] = chapter_translations
         return context
 
     @method_decorator(csrf_exempt)
     def post(self, request, *args, **kwargs):
-        # Remove translation logic from upload pipeline
+        self.book = get_object_or_404(
+            Book, id=self.kwargs["book_id"], user=self.request.user
+        )
+        chapters = Chapter.objects.filter(book=self.book).order_by("chapter_number")
+        # Get selected target language from POST data
+        target_language_code = request.POST.get("target_language")
+        chapter_ids = request.POST.getlist("chapter_ids")
+        if not target_language_code:
+            messages.error(request, "Please select a target language.")
+            return redirect(request.path)
+        if not chapter_ids:
+            messages.error(request, "Please select at least one chapter to translate.")
+            return redirect(request.path)
+        from books.tasks import bulk_translate_chapters_async
+        # Call the Celery task asynchronously
+        bulk_translate_chapters_async.delay(self.book.id, target_language_code, chapter_ids, request.user.id)
+        messages.success(
+            request,
+            "Bulk translation started. The selected chapters will be translated in the background. Refresh the page after a while to see results.",
+        )
         return redirect(request.path)
+
 
 class ChapterDetailView(LoginRequiredMixin, DetailView):
     model = Chapter
-    template_name = 'books/chapter_detail.html'
-    context_object_name = 'chapter'
+    template_name = "books/chapter_detail.html"
+    context_object_name = "chapter"
 
     def get_queryset(self):
         return Chapter.objects.filter(book__user=self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['book'] = self.object.book
-        context['excerpt'] = self.object.excerpt
-        context['original_text'] = self.object.original_text
+        context["book"] = self.object.book
+        context["excerpt"] = self.object.excerpt
+        context["original_text"] = self.object.original_text
         return context
+
 
 # Existing ViewSets
 class BookViewSet(viewsets.ModelViewSet):

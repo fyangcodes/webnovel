@@ -8,48 +8,61 @@
     .translation-container {
         display: flex;
         gap: 1rem;
-        height: calc(100vh - 200px);
+        height: auto;
+        flex-wrap: wrap;
     }
-
     .translation-column {
-        flex: 1;
+        flex: 1 1 350px;
+        min-width: 320px;
+        max-width: 100%;
         display: flex;
         flex-direction: column;
+        margin-bottom: 1rem;
     }
-
+    @media (max-width: 900px) {
+        .translation-container {
+            flex-direction: column;
+        }
+        .translation-column {
+            min-width: 0;
+            width: 100%;
+        }
+    }
     .translation-header {
         background: #f8f9fa;
         padding: 1rem;
         border-radius: 4px;
         margin-bottom: 1rem;
     }
-
     .translation-content {
         flex: 1;
-        overflow-y: auto;
+        overflow-x: auto;
         padding: 1rem;
         border: 1px solid #dee2e6;
         border-radius: 4px;
+        background: #fff;
     }
-
     .translation-editor {
         height: 100%;
         font-family: monospace;
         resize: none;
     }
-
     .chapter-nav {
         display: flex;
         justify-content: space-between;
         margin-bottom: 1rem;
     }
-
     .abstract-panel {
         background: #fff;
         padding: 1rem;
         margin-bottom: 1rem;
         border: 1px solid #dee2e6;
         border-radius: 4px;
+    }
+    pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 1rem;
     }
 </style>
 {% endblock %}
@@ -102,59 +115,31 @@
             </div>
         </div>
 
-        <!-- English Translation -->
+        {% if active_translation %}
+        <!-- Selected Translation -->
         <div class="translation-column">
             <div class="translation-header">
-                <h5>English Translation</h5>
+                <h5>{{ active_lang_code|upper }} Translation</h5>
                 <div class="d-flex justify-content-between align-items-center">
-                    <span>Version: {{ en_translation.version|default:"New" }}</span>
-                    {% if en_translation %}
-                    <a href="{% url 'translations:history' en_translation.id %}" class="btn btn-sm btn-info">
+                    <span>Version: {{ active_translation.version|default:"New" }}</span>
+                    <a href="{% url 'translations:history' active_translation.id %}" class="btn btn-sm btn-info">
                         View History
                     </a>
-                    {% endif %}
                 </div>
             </div>
             <div class="translation-content">
-                <form method="post" class="h-100" id="en-translation-form">
-                    {% csrf_token %}
-                    <textarea name="translated_text" class="form-control translation-editor"
-                        data-language="en">{{ en_translation.translated_text|default:"" }}</textarea>
-                    <div class="mt-2">
-                        <textarea name="comment" class="form-control" rows="2"
-                            placeholder="Add a comment about your changes (optional)"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary mt-2">Save English Translation</button>
-                </form>
+                <pre>{{ active_translation.translated_text }}</pre>
             </div>
         </div>
-
-        <!-- German Translation -->
-        <div class="translation-column">
-            <div class="translation-header">
-                <h5>German Translation</h5>
-                <div class="d-flex justify-content-between align-items-center">
-                    <span>Version: {{ de_translation.version|default:"New" }}</span>
-                    {% if de_translation %}
-                    <a href="{% url 'translations:history' de_translation.id %}" class="btn btn-sm btn-info">
-                        View History
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-            <div class="translation-content">
-                <form method="post" class="h-100" id="de-translation-form">
-                    {% csrf_token %}
-                    <textarea name="translated_text" class="form-control translation-editor"
-                        data-language="de">{{ de_translation.translated_text|default:"" }}</textarea>
-                    <div class="mt-2">
-                        <textarea name="comment" class="form-control" rows="2"
-                            placeholder="Add a comment about your changes (optional)"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary mt-2">Save German Translation</button>
-                </form>
+        {% else %}
+        <!-- Prompt to select a language -->
+        <div class="translation-column d-flex align-items-center justify-content-center">
+            <div class="w-100 text-center">
+                <h5 class="text-muted">No translation selected</h5>
+                <p class="text-muted">Please select a language from the chapter list to view its translation.</p>
             </div>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
@@ -163,29 +148,22 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const forms = document.querySelectorAll('form');
-
         forms.forEach(form => {
             form.addEventListener('submit', async function (e) {
                 e.preventDefault();
-
                 const language = this.querySelector('.translation-editor').dataset.language;
                 const formData = new FormData(this);
-
                 try {
-                    const response = await fetch(`{% url 'translations:save_translation' chapter.id %}${language}/`, {
+                    const response = await fetch(`{% url 'translations:save_translation' chapter.id 'LANGCODE' %}`.replace('LANGCODE', language), {
                         method: 'POST',
                         body: formData,
                         headers: {
                             'X-CSRFToken': formData.get('csrfmiddlewaretoken')
                         }
                     });
-
                     const data = await response.json();
-
                     if (data.success) {
-                        // Show success message
                         alert('Translation saved successfully!');
-                        // Update version display
                         const versionSpan = this.closest('.translation-column')
                             .querySelector('.translation-header span');
                         versionSpan.textContent = `Version: ${data.version}`;

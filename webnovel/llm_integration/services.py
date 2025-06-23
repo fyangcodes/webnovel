@@ -296,3 +296,33 @@ class LLMTranslationService:
         except Exception as e:
             logger.error(f"Error translating chapter: {str(e)}")
             return f"[Translation Error: {str(e)}]\n\nOriginal text:\n{chapter_text}"
+
+    def translate_text(self, text: str, target_language: str) -> str:
+        """
+        Translate a short text (e.g., title or key term) to the target language.
+        """
+        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
+        prompt = f"""
+        Please translate the following text to {target_lang_name}. Maintain the original meaning and style.
+        Text to translate:
+        {text}
+        """
+        try:
+            if not self.client:
+                raise Exception("OpenAI client not initialized. No API key provided.")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are a professional translator specializing in literary translation to {target_lang_name}.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=256,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"Error translating text: {str(e)}")
+            return f"[Translation Error: {str(e)}] {text}"

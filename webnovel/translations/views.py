@@ -30,11 +30,14 @@ class ChapterTranslationView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         chapter = self.get_object()
-
+        request = self.request
+        lang_code = request.GET.get('lang')
+        active_translation = None
+        if lang_code:
+            active_translation = chapter.get_translation(lang_code)
         # Get translations for both languages
         en_translation = chapter.get_translation("en")
         de_translation = chapter.get_translation("de")
-
         context.update(
             {
                 "en_translation": en_translation,
@@ -46,6 +49,8 @@ class ChapterTranslationView(LoginRequiredMixin, DetailView):
                 "next_chapter": chapter.book.chapters.filter(
                     chapter_number=chapter.chapter_number + 1
                 ).first(),
+                "active_translation": active_translation,
+                "active_lang_code": lang_code,
             }
         )
         return context

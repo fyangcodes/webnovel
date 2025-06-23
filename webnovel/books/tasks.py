@@ -124,3 +124,57 @@ def generate_chapter_abstract_async(chapter_id):
 
     except Exception as e:
         logger.error(f"Error regenerating abstract for chapter {chapter_id}: {str(e)}")
+
+
+@shared_task
+def bulk_translate_chapters_async(book_id, target_language_code, chapter_ids, user_id):
+    """Bulk translate selected chapters to the target language asynchronously."""
+    from books.models import Book, Chapter
+    from languages.models import Language
+    from translations.models import Translation
+    from django.contrib.auth import get_user_model
+    import json
+    try:
+        book = Book.objects.get(id=book_id)
+        chapters = Chapter.objects.filter(book=book, id__in=chapter_ids).order_by("chapter_number")
+        target_language = Language.objects.get(code=target_language_code)
+        user = get_user_model().objects.get(id=user_id)
+        translation_service = LLMTranslationService()
+        translated_count = 0
+        for chapter in chapters:
+            exists = Translation.objects.filter(
+                chapter=chapter, target_language=target_language
+            ).exists()
+            if not exists:
+                # Translate title
+                translated_title = translation_service.translate_text(
+                    chapter.title, target_language.code
+                )
+                # Translate main text
+                translated_text = translation_service.translate_chapter(
+                    chapter.original_text, target_language.code
+                )
+                # Translate key terms (returns a list)
+                key_terms = translation_service.extract_key_terms(
+                    chapter.original_text, target_language.code
+                )
+                # Translate each key term and store as key-value pairs
+                key_term_pairs = {}
+                for term in key_terms:
+                    translated_term = translation_service.translate_text(term, target_language.code)
+                    key_term_pairs[term] = translated_term
+                # Store key_term_pairs as JSON string if Translation model has a field for it
+                # If not, add a comment for where to store
+                Translation.objects.create(
+                    chapter=chapter,
+                    target_language=target_language,
+                    title=translated_title,
+                    translated_text=translated_text,
+                    created_by=user,
+                    # key_terms=json.dumps(key_term_pairs),  # Uncomment if you add this field
+                )
+                translated_count += 1
+        return translated_count
+    except Exception as e:
+        logger.error(f"Error in bulk_translate_chapters_async: {str(e)}")
+        return 0
