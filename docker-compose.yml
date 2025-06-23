@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    working_dir: /app/webnovel
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+
+  celery:
+    build: .
+    command: celery -A webnovel worker -l info
+    working_dir: /app/webnovel
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379" 

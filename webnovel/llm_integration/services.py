@@ -9,20 +9,36 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def decode_gb_text(input_data, encoding="gbk"):
+    """
+    Decodes bytes or str in GB encoding to Unicode string.
+    If input is already str, returns as is.
+    """
+    if isinstance(input_data, bytes):
+        return input_data.decode(encoding)
+    elif isinstance(input_data, str):
+        return input_data
+    else:
+        raise TypeError("Input must be bytes or str")
+
+
 class LLMTranslationService:
     """Service for handling LLM API calls for translation and text processing"""
 
-    def __init__(self, api_key=None, model="gpt-4"):
-        self.api_key = api_key or getattr(settings, "OPENAI_API_KEY", None)
+    def __init__(self, api_key=None, model="gpt-3.5-turbo"):
+        self.api_key = api_key or getattr(settings, "LLM_API_KEY", None)
         self.model = model
         if self.api_key:
-            openai.api_key = self.api_key
+            self.client = openai.OpenAI(api_key=self.api_key)
+        else:
+            self.client = None
 
     def divide_into_chapters(self, text: str) -> List[Dict[str, Any]]:
         """
         Use LLM to intelligently divide book into chapters
         Returns list of dicts with 'title' and 'text' keys
         """
+
         prompt = f"""
         Please analyze the following text and divide it into logical chapters. 
         For each chapter, provide:
@@ -41,34 +57,35 @@ class LLMTranslationService:
         - Paragraph breaks that indicate new sections
         """
 
-        try:
-            response = openai.ChatCompletion.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful assistant that specializes in analyzing and structuring text content.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=4000,
-            )
+        # try:
+        #     if not self.client:
+        #         raise Exception("OpenAI client not initialized. No API key provided.")
+        #     response = self.client.chat.completions.create(
+        #         model=self.model,
+        #         messages=[
+        #             {
+        #                 "role": "system",
+        #                 "content": "You are a helpful assistant that specializes in analyzing and structuring text content.",
+        #             },
+        #             {"role": "user", "content": prompt},
+        #         ],
+        #         temperature=0.3,
+        #         max_tokens=4000,
+        #     )
+        #     result = response.choices[0].message.content.strip()
 
-            result = response.choices[0].message.content.strip()
+        #     # Try to parse JSON response
+        #     try:
+        #         chapters = json.loads(result)
+        #         if isinstance(chapters, list):
+        #             return chapters
+        #     except json.JSONDecodeError:
+        #         logger.warning(
+        #             "LLM response was not valid JSON, falling back to simple division"
+        #         )
 
-            # Try to parse JSON response
-            try:
-                chapters = json.loads(result)
-                if isinstance(chapters, list):
-                    return chapters
-            except json.JSONDecodeError:
-                logger.warning(
-                    "LLM response was not valid JSON, falling back to simple division"
-                )
-
-        except Exception as e:
-            logger.error(f"Error calling OpenAI API: {str(e)}")
+        # except Exception as e:
+        #     logger.error(f"Error calling OpenAI API: {str(e)}")
 
         # Fallback: Simple chapter division
         return self._simple_chapter_division(text)
@@ -77,62 +94,56 @@ class LLMTranslationService:
         self, text: str, max_chars_per_chapter: int = 5000
     ) -> List[Dict[str, Any]]:
         """
-        Fallback method to divide text into chapters based on length
+        Improved method to divide text into chapters for Chinese novels:
+        1. Try to split by chapter headings (e.g., 第X章, 第X回, Chapter X)
+        2. If no headings found, split by sentence-ending punctuation and character count
         """
         chapters = []
-        words = text.split()
-        current_chapter = []
-        current_length = 0
+        # Regex for common chapter headings in Chinese and English
+        chapter_heading_pattern = re.compile(
+            r'(第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\\s*\\d+|CHAPTER\\s*\\d+)', re.UNICODE
+        )
+
+        # Find all chapter headings and their positions
+        matches = list(chapter_heading_pattern.finditer(text))
+        if matches and len(matches) > 1:
+            # Split by chapter headings
+            for idx, match in enumerate(matches):
+                start = match.start()
+                end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+                chapter_title = match.group()
+                chapter_text = text[start:end].strip()
+                chapters.append({
+                    "title": chapter_title,
+                    "text": chapter_text
+                })
+            return chapters
+
+        # Fallback: split by sentence-ending punctuation and character count
+        # Chinese sentence-ending punctuation: 。！？!? (fullwidth and halfwidth)
+        sentence_endings = re.compile(r'[。！？!?]')
+        sentences = sentence_endings.split(text)
+        current_chunk = ''
         chapter_num = 1
-
-        for word in words:
-            current_chapter.append(word)
-            current_length += len(word) + 1  # +1 for space
-
-            if current_length >= max_chars_per_chapter:
-                # Try to break at a sentence end
-                chapter_text = " ".join(current_chapter)
-
-                # Find last sentence end
-                last_sentence_end = max(
-                    chapter_text.rfind(". "),
-                    chapter_text.rfind("! "),
-                    chapter_text.rfind("? "),
-                )
-
-                if (
-                    last_sentence_end > len(chapter_text) * 0.7
-                ):  # If we found a good break point
-                    final_text = chapter_text[: last_sentence_end + 1]
-                    remaining = chapter_text[last_sentence_end + 2 :]
-
-                    chapters.append(
-                        {"title": f"Chapter {chapter_num}", "text": final_text.strip()}
-                    )
-
-                    current_chapter = remaining.split() if remaining else []
-                    current_length = len(remaining) if remaining else 0
-                else:
-                    chapters.append(
-                        {
-                            "title": f"Chapter {chapter_num}",
-                            "text": chapter_text.strip(),
-                        }
-                    )
-                    current_chapter = []
-                    current_length = 0
-
-                chapter_num += 1
-
-        # Add remaining text as final chapter
-        if current_chapter:
-            chapters.append(
-                {
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
+            if current_chunk:
+                current_chunk += sentence + '。'  # Add back a period for readability
+            else:
+                current_chunk = sentence + '。'
+            if len(current_chunk) >= max_chars_per_chapter:
+                chapters.append({
                     "title": f"Chapter {chapter_num}",
-                    "text": " ".join(current_chapter).strip(),
-                }
-            )
-
+                    "text": current_chunk.strip()
+                })
+                chapter_num += 1
+                current_chunk = ''
+        if current_chunk:
+            chapters.append({
+                "title": f"Chapter {chapter_num}",
+                "text": current_chunk.strip()
+            })
         return chapters
 
     def generate_chapter_abstract(self, chapter_text: str) -> str:
@@ -152,7 +163,9 @@ class LLMTranslationService:
         """
 
         try:
-            response = openai.ChatCompletion.create(
+            if not self.client:
+                raise Exception("OpenAI client not initialized. No API key provided.")
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
@@ -190,7 +203,9 @@ class LLMTranslationService:
         """
 
         try:
-            response = openai.ChatCompletion.create(
+            if not self.client:
+                raise Exception("OpenAI client not initialized. No API key provided.")
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
@@ -251,7 +266,9 @@ class LLMTranslationService:
         """
 
         try:
-            response = openai.ChatCompletion.create(
+            if not self.client:
+                raise Exception("OpenAI client not initialized. No API key provided.")
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
@@ -269,5 +286,3 @@ class LLMTranslationService:
         except Exception as e:
             logger.error(f"Error translating chapter: {str(e)}")
             return f"[Translation Error: {str(e)}]\n\nOriginal text:\n{chapter_text}"
-
-

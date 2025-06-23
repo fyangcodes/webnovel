@@ -10,11 +10,10 @@ class BookAdmin(admin.ModelAdmin):
         "user",
         "status",
         "total_chapters",
-        "upload_date",
     ]
     list_filter = ["status", "original_language", "upload_date"]
     search_fields = ["title", "author", "user__username"]
-    readonly_fields = ["file_hash", "file_size", "processing_duration"]
+    readonly_fields = ["upload_date", "file_hash", "file_size", "processing_duration"]
 
     fieldsets = (
         (

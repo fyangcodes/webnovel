@@ -10,24 +10,28 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 import os
-from datetime import timedelta
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-kncf$q4j08v6ztg)y4^r1$b5m$1(_z%wq@(2pkahl%ye62(s9!"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
 
 
 # Application definition
@@ -42,9 +46,9 @@ INSTALLED_APPS = [
     # Third party apps
     "django_celery_results",
     "django_celery_beat",
-    'rest_framework',
-    'crispy_forms',
-    'crispy_bootstrap5',
+    "rest_framework",
+    "crispy_forms",
+    "crispy_bootstrap5",
     # Local apps
     "books.apps.BooksConfig",
     "translations.apps.TranslationsConfig",
@@ -84,13 +88,18 @@ WSGI_APPLICATION = "webnovel.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///db.sqlite3")
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+if DATABASE_URL.startswith("sqlite"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    # For future use with other databases
+    pass
 
 
 # Password validation
@@ -141,7 +150,7 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 # Celery Configuration
-CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_BROKER_URL = "redis://redis:6379/0"
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
 CELERY_ACCEPT_CONTENT = ["json"]
@@ -179,7 +188,7 @@ LOGIN_URL = "/accounts/login/"
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://localhost:6379/1",
+        "LOCATION": "redis://redis:6379/1",
     }
 }
 
@@ -189,4 +198,33 @@ ALLOWED_UPLOAD_EXTENSIONS = [".txt", ".pdf", ".epub", ".docx"]
 
 # Crispy Forms Settings
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
-CRISPY_TEMPLATE_PACK = "bootstrap5" 
+CRISPY_TEMPLATE_PACK = "bootstrap5"
+
+# Email settings
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+
+# Logging Configuration
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+        "file": {
+            "class": "logging.FileHandler",
+            "filename": "myapp.log",
+        },
+    },
+    "loggers": {
+        "": {  # root logger
+            "handlers": ["console", "file"],
+            "level": "INFO",
+        },
+    },
+}
