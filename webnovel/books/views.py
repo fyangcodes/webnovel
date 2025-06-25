@@ -5,7 +5,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 
 from django.shortcuts import get_object_or_404, redirect
 from django.db import transaction
-from django.views.generic import ListView, DetailView, CreateView, DeleteView
+from django.views.generic import ListView, DetailView, CreateView, DeleteView, UpdateView, FormView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.contrib import messages
@@ -13,7 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from llm_integration.services import LLMTranslationService
 
-from .models import Book, Chapter
+from .models import Book, BookFile, Chapter
 from .serializers import (
     BookSerializer,
     BookCreateSerializer,
@@ -22,6 +22,7 @@ from .serializers import (
 )
 from .tasks import process_book_async
 from .utils import extract_text_from_file
+from .forms import BookFileForm, ChapterForm
 
 
 # Regular Django Views
@@ -31,41 +32,44 @@ class BookListView(LoginRequiredMixin, ListView):
     context_object_name = "books"
 
     def get_queryset(self):
-        return Book.objects.filter(user=self.request.user)
+        return Book.objects.filter(owner=self.request.user)
+
+
+class BookCreateView(LoginRequiredMixin, CreateView):
+    model = Book
+    fields = ["title", "author", "language", "isbn", "description", "cover_image"]
+    template_name = "books/book_form.html"
+    success_url = reverse_lazy("books:book_list")
+
+    def form_valid(self, form):
+        form.instance.owner = self.request.user
+        return super().form_valid(form)
 
 
 class BookDetailView(LoginRequiredMixin, DetailView):
     model = Book
     template_name = "books/book_detail.html"
     context_object_name = "book"
-
     def get_queryset(self):
-        return Book.objects.filter(user=self.request.user)
-
+        return Book.objects.filter(owner=self.request.user)
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["chapters"] = self.object.chapters.all().order_by("chapter_number")
         return context
 
 
-class BookUploadView(LoginRequiredMixin, CreateView):
+class BookUpdateView(LoginRequiredMixin, UpdateView):
     model = Book
-    template_name = "books/book_upload.html"
-    fields = ["title", "author", "uploaded_file", "original_language"]
-    success_url = reverse_lazy("books:book_list")
+    fields = ["title", "author", "language", "isbn", "description", "cover_image"]
+    template_name = "books/book_form.html"
+    context_object_name = "book"
+
+    def get_success_url(self):
+        return reverse_lazy("books:book_detail", kwargs={"pk": self.object.pk})
 
     def form_valid(self, form):
-        form.instance.user = self.request.user
-        form.instance.status = "uploaded"
-        response = super().form_valid(form)
-
-        # Start async processing
-        process_book_async.delay(self.object.id)
-        messages.success(
-            self.request, "Book uploaded successfully and is being processed."
-        )
-
-        return response
+        form.instance.owner = self.request.user
+        return super().form_valid(form)
 
 
 class BookDeleteView(LoginRequiredMixin, DeleteView):
@@ -74,7 +78,7 @@ class BookDeleteView(LoginRequiredMixin, DeleteView):
     success_url = reverse_lazy("books:book_list")
 
     def get_queryset(self):
-        return Book.objects.filter(user=self.request.user)
+        return Book.objects.filter(owner=self.request.user)
 
     def delete(self, request, *args, **kwargs):
         book = self.get_object()
@@ -84,6 +88,43 @@ class BookDeleteView(LoginRequiredMixin, DeleteView):
         return super().delete(request, *args, **kwargs)
 
 
+class BookFileUploadView(LoginRequiredMixin, FormView):
+    form_class = BookFileForm
+    template_name = "books/bookfile_upload.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["book"] = get_object_or_404(Book, pk=self.kwargs["pk"], owner=self.request.user)
+        return context
+
+    def form_valid(self, form):
+        book = get_object_or_404(Book, pk=self.kwargs["pk"], owner=self.request.user)
+        book_file = form.save(commit=False)
+        book_file.book = book
+        book_file.owner = self.request.user
+        book_file.save()
+        return redirect("books:book_detail", pk=book.pk)
+
+
+class ChapterAddView(LoginRequiredMixin, FormView):
+    form_class = ChapterForm
+    template_name = "books/chapter_add.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["book"] = get_object_or_404(Book, pk=self.kwargs["pk"], owner=self.request.user)
+        return context
+
+    def form_valid(self, form):
+        book = get_object_or_404(Book, pk=self.kwargs["pk"], owner=self.request.user)
+        chapter = form.save(commit=False)
+        chapter.book = book
+        chapter.book.total_chapters += 1
+        chapter.book.save()
+        chapter.save()
+        return redirect("books:book_detail", pk=book.pk)
+
+
 class ChapterListView(LoginRequiredMixin, ListView):
     model = Chapter
     template_name = "books/chapter_list.html"
@@ -91,7 +132,7 @@ class ChapterListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         self.book = get_object_or_404(
-            Book, id=self.kwargs["book_id"], user=self.request.user
+            Book, id=self.kwargs["book_id"], owner=self.request.user
         )
         return Chapter.objects.filter(book=self.book).order_by("chapter_number")
 
@@ -114,7 +155,7 @@ class ChapterListView(LoginRequiredMixin, ListView):
     @method_decorator(csrf_exempt)
     def post(self, request, *args, **kwargs):
         self.book = get_object_or_404(
-            Book, id=self.kwargs["book_id"], user=self.request.user
+            Book, id=self.kwargs["book_id"], owner=self.request.user
         )
         chapters = Chapter.objects.filter(book=self.book).order_by("chapter_number")
         # Get selected target language from POST data
@@ -140,16 +181,8 @@ class ChapterDetailView(LoginRequiredMixin, DetailView):
     model = Chapter
     template_name = "books/chapter_detail.html"
     context_object_name = "chapter"
-
     def get_queryset(self):
-        return Chapter.objects.filter(book__user=self.request.user)
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["book"] = self.object.book
-        context["excerpt"] = self.object.excerpt
-        context["original_text"] = self.object.original_text
-        return context
+        return Chapter.objects.filter(book__owner=self.request.user)
 
 
 # Existing ViewSets
@@ -158,7 +191,7 @@ class BookViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
-        return Book.objects.filter(user=self.request.user)
+        return Book.objects.filter(owner=self.request.user)
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -223,9 +256,9 @@ class ChapterViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         book_id = self.kwargs.get("book_pk")
         if book_id:
-            book = get_object_or_404(Book, id=book_id, user=self.request.user)
+            book = get_object_or_404(Book, id=book_id, owner=self.request.user)
             return Chapter.objects.filter(book=book)
-        return Chapter.objects.filter(book__user=self.request.user)
+        return Chapter.objects.filter(book__owner=self.request.user)
 
     def get_serializer_class(self):
         if self.action == "retrieve":

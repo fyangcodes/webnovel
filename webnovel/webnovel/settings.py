@@ -51,9 +51,7 @@ INSTALLED_APPS = [
     "crispy_bootstrap5",
     # Local apps
     "books.apps.BooksConfig",
-    "translations.apps.TranslationsConfig",
     "llm_integration.apps.LlmIntegrationConfig",
-    "languages.apps.LanguagesConfig",
 ]
 
 MIDDLEWARE = [

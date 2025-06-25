@@ -1,0 +1,11 @@
+{% extends "books/base_books.html" %}
+{% block title %}Add Chapter{% endblock %}
+{% block books_content %}
+<h2>Add Chapter to {{ book.title }}</h2>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-success">Add Chapter</button>
+    <a href="{% url 'books:book_detail' book.id %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %} 

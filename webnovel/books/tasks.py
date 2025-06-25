@@ -3,7 +3,6 @@ from django.utils import timezone
 from .models import Book, Chapter
 from .utils import extract_text_from_file
 from llm_integration.services import LLMTranslationService
-from translations.models import Translation
 import logging
 
 logger = logging.getLogger(__name__)

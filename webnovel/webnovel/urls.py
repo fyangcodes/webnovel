@@ -30,7 +30,6 @@ urlpatterns = [
     # App URLs
     path("", RedirectView.as_view(url="/books/", permanent=False)),
     path("books/", include("books.urls", namespace="books")),
-    path("translations/", include("translations.urls", namespace="translations")),
     path("llm/", include("llm_integration.urls", namespace="llm")),
 ]
 

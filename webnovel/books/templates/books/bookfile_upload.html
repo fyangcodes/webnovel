@@ -1,0 +1,11 @@
+{% extends "books/base_books.html" %}
+{% block title %}Upload File{% endblock %}
+{% block books_content %}
+<h2>Upload File for {{ book.title }}</h2>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-primary">Upload</button>
+    <a href="{% url 'books:book_detail' book.id %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %} 

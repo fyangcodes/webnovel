@@ -1,5 +1,10 @@
 from django.contrib import admin
-from .models import Book, Chapter
+from .models import Book, Chapter, Language, BookFile, Author, ChangeLog
+
+
+class BookFileInline(admin.TabularInline):
+    model = BookFile
+    extra = 1
 
 
 @admin.register(Book)
@@ -7,20 +12,21 @@ class BookAdmin(admin.ModelAdmin):
     list_display = [
         "title",
         "author",
-        "user",
+        "owner",
         "status",
         "total_chapters",
     ]
-    list_filter = ["status", "original_language", "upload_date"]
-    search_fields = ["title", "author", "user__username"]
-    readonly_fields = ["upload_date", "file_hash", "file_size", "processing_duration"]
+    list_filter = ["status"]
+    search_fields = ["title", "author", "owner__username"]
+    readonly_fields = []
+    inlines = [BookFileInline]
 
     fieldsets = (
         (
             "Basic Information",
-            {"fields": ("title", "author", "original_language", "isbn", "description")},
+            {"fields": ("title", "author", "isbn", "description")},
         ),
-        ("File Information", {"fields": ("uploaded_file", "file_size", "file_hash")}),
+        ("File Information", {"fields": ()}),
         (
             "Processing Status",
             {
@@ -35,28 +41,18 @@ class BookAdmin(admin.ModelAdmin):
         ),
         (
             "Timestamps",
-            {
-                "fields": (
-                    "upload_date",
-                    "processing_started_at",
-                    "processing_completed_at",
-                    "processing_duration",
-                )
-            },
+            {"fields": ()},
         ),
     )
 
 
 @admin.register(Chapter)
 class ChapterAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "processing_status", "word_count", "has_translations"]
-    list_filter = ["processing_status", "book__status"]
-    search_fields = ["title", "book__title", "excerpt"]
-    readonly_fields = ["word_count", "char_count"]
+    list_display = ["title", "chapter_number", "book"]
+    list_filter = []
 
-    fieldsets = (
-        ("Basic Information", {"fields": ("book", "chapter_number", "title")}),
-        ("Content", {"fields": ("excerpt", "original_text")}),
-        ("AI Analysis", {"fields": ("abstract", "key_terms")}),
-        ("Metadata", {"fields": ("word_count", "char_count", "processing_status")}),
-    )
+
+admin.site.register(Language)
+admin.site.register(Author)
+admin.site.register(BookFile)
+admin.site.register(ChangeLog)
