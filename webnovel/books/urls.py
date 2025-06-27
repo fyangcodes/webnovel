@@ -1,21 +1,23 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from rest_framework_nested import routers
+from django.urls import path
 from . import views
 from .views import (
-    BookListView, BookCreateView, BookDetailView, BookUpdateView, BookDeleteView,
-    BookFileUploadView, ChapterAddView, ChapterDetailView
+    BookListView,
+    BookCreateView,
+    BookDetailView,
+    BookUpdateView,
+    BookDeleteView,
+    BookFileUploadView,
+    ChapterCreateView,
+    ChapterDetailView,
+    ChapterUpdateView,
+    ChapterDeleteView,
+    ChapterScheduleView,
+    ChapterPublishNowView,
+    AnalyzeChapterView,
+    BatchAnalyzeChaptersView,
 )
 
 app_name = "books"
-
-# API Routes
-router = DefaultRouter()
-router.register(r"books", views.BookViewSet, basename="book")
-
-# Nested router for chapters within books
-books_router = routers.NestedDefaultRouter(router, r"books", lookup="book")
-books_router.register(r"chapters", views.ChapterViewSet, basename="book-chapters")
 
 # Regular URL patterns
 urlpatterns = [
@@ -26,13 +28,18 @@ urlpatterns = [
     path("<int:pk>/update/", BookUpdateView.as_view(), name="book_update"),
     path("<int:pk>/delete/", BookDeleteView.as_view(), name="book_delete"),
     path("<int:pk>/upload-file/", BookFileUploadView.as_view(), name="bookfile_upload"),
-    path("<int:pk>/add-chapter/", ChapterAddView.as_view(), name="chapter_add"),
     
-    # Chapter views
-    path("<int:book_id>/chapters/", views.ChapterListView.as_view(), name="chapter_list"),
+    # Chapter CRUD views
+    path("<int:book_id>/chapters/create/", ChapterCreateView.as_view(), name="chapter_create"),
     path("chapters/<int:pk>/", ChapterDetailView.as_view(), name="chapter_detail"),
+    path("chapters/<int:pk>/update/", ChapterUpdateView.as_view(), name="chapter_update"),
+    path("chapters/<int:pk>/delete/", ChapterDeleteView.as_view(), name="chapter_delete"),
     
-    # API endpoints
-    path("api/", include(router.urls)),
-    path("api/", include(books_router.urls)),
+    # Chapter publishing views
+    path("chapters/<int:pk>/schedule/", ChapterScheduleView.as_view(), name="chapter_schedule"),
+    path("chapters/<int:pk>/publish/", ChapterPublishNowView.as_view(), name="chapter_publish_now"),
+    path("chapters/<int:pk>/analyze/", AnalyzeChapterView.as_view(), name="chapter_analyze"),
+    
+    # Batch processing views
+    path("batch-analyze-chapters/", BatchAnalyzeChaptersView.as_view(), name="batch_analyze_chapters"),
 ]

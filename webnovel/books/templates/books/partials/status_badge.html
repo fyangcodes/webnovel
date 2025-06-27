@@ -1,0 +1,19 @@
+{% load static %}
+
+{% if status == 'draft' %}
+    <span class="badge bg-secondary">{{ status|title }}</span>
+{% elif status == 'scheduled' %}
+    <span class="badge bg-warning">{{ status|title }}</span>
+{% elif status == 'published' %}
+    <span class="badge bg-success">{{ status|title }}</span>
+{% elif status == 'archived' %}
+    <span class="badge bg-dark">{{ status|title }}</span>
+{% elif status == 'private' %}
+    <span class="badge bg-info">{{ status|title }}</span>
+{% elif status == 'completed' %}
+    <span class="badge bg-primary">{{ status|title }}</span>
+{% elif status == 'on_hold' %}
+    <span class="badge bg-warning">{{ status|title }}</span>
+{% else %}
+    <span class="badge bg-secondary">{{ status|title }}</span>
+{% endif %} 

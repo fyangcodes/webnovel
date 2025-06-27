@@ -1,0 +1,14 @@
+{% extends "books/partials/base_books.html" %}
+{% load static %}
+
+{% block title %}My Books{% endblock %}
+
+{% block books_content %}
+<div class="row">
+    {% for book in books %}
+        {% include "books/partials/book_card.html" with book=book %}
+    {% empty %}
+        {% include "books/partials/empty_state.html" with icon="book" title="No books yet" message="Create your first book to get started!" action_url=book_create_url action_text="Create Book" %}
+    {% endfor %}
+</div>
+{% endblock %} 

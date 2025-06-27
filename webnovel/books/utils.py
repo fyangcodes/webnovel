@@ -2,7 +2,7 @@ import os
 
 import PyPDF2
 from typing import Optional
-from docx import Document
+# from docx import Document
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
@@ -22,7 +22,7 @@ class TextExtractor:
         extractors = {
             ".pdf": TextExtractor._extract_from_pdf,
             ".txt": TextExtractor._extract_from_txt,
-            ".docx": TextExtractor._extract_from_docx,
+            # ".docx": TextExtractor._extract_from_docx,
             ".epub": TextExtractor._extract_from_epub,
         }
 
@@ -54,16 +54,16 @@ class TextExtractor:
             with open(file_path, "r", encoding="latin-1") as file:
                 return file.read()
 
-    @staticmethod
-    def _extract_from_docx(file_path):
-        try:
-            doc = Document(file_path)
-            text = []
-            for paragraph in doc.paragraphs:
-                text.append(paragraph.text)
-            return "\n".join(text)
-        except Exception as e:
-            raise ValidationError(f"Error reading DOCX: {str(e)}")
+    # @staticmethod
+    # def _extract_from_docx(file_path):
+    #     try:
+    #         doc = Document(file_path)
+    #         text = []
+    #         for paragraph in doc.paragraphs:
+    #         text.append(paragraph.text)
+    #         return "\n".join(text)
+    #     except Exception as e:
+    #         raise ValidationError(f"Error reading DOCX: {str(e)}")
 
     @staticmethod
     def _extract_from_epub(file_path):

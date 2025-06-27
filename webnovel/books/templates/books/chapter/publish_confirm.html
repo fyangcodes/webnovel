@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Publish Chapter - {{ chapter.title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Publish Chapter</h3>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ chapter.title }}</h5>
+                    <p class="card-text">
+                        <strong>Book:</strong> {{ chapter.book.title }}<br>
+                        <strong>Chapter:</strong> {{ chapter.chapter_number }}<br>
+                        <strong>Current Status:</strong> 
+                        <span class="badge {% if chapter.status == 'draft' %}bg-secondary{% elif chapter.status == 'scheduled' %}bg-warning{% elif chapter.status == 'published' %}bg-success{% else %}bg-info{% endif %}">
+                            {{ chapter.get_status_display }}
+                        </span>
+                    </p>
+                    
+                    {% if chapter.status == 'scheduled' and chapter.scheduled_for %}
+                        <div class="alert alert-info">
+                            <strong>Scheduled for:</strong> {{ chapter.scheduled_for|date:"F j, Y, g:i a" }}
+                        </div>
+                    {% endif %}
+                    
+                    <div class="alert alert-warning">
+                        <strong>Are you sure you want to publish this chapter now?</strong><br>
+                        This will make the chapter immediately available to readers.
+                    </div>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'books:book_detail' chapter.book.pk %}" class="btn btn-secondary">
+                                Cancel
+                            </a>
+                            <button type="submit" class="btn btn-success">
+                                Publish Now
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

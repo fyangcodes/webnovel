@@ -1,0 +1,193 @@
+{% extends "books/partials/base_books.html" %}
+{% load static %}
+
+{% block title %}{{ book.title }}{% endblock %}
+
+{% block books_content %}
+<div class="mb-4">
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <h1>{{ book.title }}</h1>
+            <h5 class="text-muted">
+                {% if book.author %}
+                    by {{ book.author.localized_name }}
+                {% else %}
+                    Unknown Author
+                {% endif %}
+            </h5>
+        </div>
+        <div class="btn-group" role="group">
+            <a href="{% url 'books:book_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Books
+            </a>
+            <a href="{% url 'books:book_update' book.pk %}" class="btn btn-outline-primary">
+                <i class="fas fa-edit"></i> Edit Book
+            </a>
+            <a href="{% url 'books:book_delete' book.pk %}" class="btn btn-outline-danger">
+                <i class="fas fa-trash"></i> Delete Book
+            </a>
+        </div>
+    </div>
+    <div class="mt-3">
+        {% include "books/partials/status_badge.html" with status=book.status %}
+        {% if book.language %}
+            <span class="badge bg-info ms-1">{{ book.language.name }}</span>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>Book Information</h3>
+            </div>
+            <div class="card-body">
+                {% if book.description %}
+                    <p class="card-text">{{ book.description }}</p>
+                {% endif %}
+                <div class="row">
+                    <div class="col-md-6">
+                        <small class="text-muted">
+                            <strong>Total Chapters:</strong> {{ book.total_chapters }}<br>
+                            <strong>Total Words:</strong> {{ book.total_words|default:"0" }}<br>
+                            <strong>Total Characters:</strong> {{ book.total_characters|default:"0" }}
+                        </small>
+                    </div>
+                    <div class="col-md-6">
+                        <small class="text-muted">
+                            <strong>Created:</strong> {{ book.created_at|date:"M d, Y" }}<br>
+                            <strong>Updated:</strong> {{ book.updated_at|date:"M d, Y" }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h4>Quick Actions</h4>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{% url 'books:bookfile_upload' book.id %}" class="btn btn-primary">
+                        <i class="fas fa-upload"></i> Upload File
+                    </a>
+                    <a href="{% url 'books:chapter_create' book.id %}" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Add Chapter
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4" data-book-id="{{ book.id }}">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Chapters</h3>
+        
+        <!-- Batch processing controls -->
+        <div class="d-flex gap-2" id="batch-controls" style="display: none;">
+            <button class="btn btn-sm btn-outline-primary" id="select-all-btn">
+                <i class="fas fa-check-square"></i> Select All
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="deselect-all-btn">
+                <i class="fas fa-square"></i> Deselect All
+            </button>
+            <div class="dropdown">
+                <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="fas fa-magic"></i> Batch Actions
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#" id="batch-analyze-btn">
+                        <i class="fas fa-brain"></i> Analyze with LLM
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" id="batch-publish-btn">
+                        <i class="fas fa-globe"></i> Publish Selected
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" id="batch-schedule-btn">
+                        <i class="fas fa-clock"></i> Schedule Selected
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-danger" href="#" id="batch-delete-btn">
+                        <i class="fas fa-trash"></i> Delete Selected
+                    </a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chapters List -->
+    <div class="list-group">
+        {% if published_chapters %}
+            <div class="list-group-item bg-light">
+                <h6 class="mb-0 text-success">
+                    <i class="fas fa-check-circle"></i> Published Chapters
+                </h6>
+            </div>
+            {% for chapter in published_chapters %}
+                {% include "books/partials/chapter_list_item.html" with chapter=chapter %}
+            {% endfor %}
+        {% endif %}
+        
+        {% if scheduled_chapters %}
+            <div class="list-group-item bg-light">
+                <h6 class="mb-0 text-warning">
+                    <i class="fas fa-clock"></i> Scheduled Chapters
+                </h6>
+            </div>
+            {% for chapter in scheduled_chapters %}
+                {% include "books/partials/chapter_list_item.html" with chapter=chapter %}
+            {% endfor %}
+        {% endif %}
+        
+        {% if draft_chapters %}
+            <div class="list-group-item bg-light">
+                <h6 class="mb-0 text-secondary">
+                    <i class="fas fa-edit"></i> Draft Chapters
+                </h6>
+            </div>
+            {% for chapter in draft_chapters %}
+                {% include "books/partials/chapter_list_item.html" with chapter=chapter %}
+            {% endfor %}
+        {% endif %}
+        
+        {% if not published_chapters and not scheduled_chapters and not draft_chapters %}
+            <div class="list-group-item">
+                {% include "books/partials/empty_state.html" with icon="file-text" title="No chapters yet" message="Add your first chapter to get started!" action_url=chapter_create_url action_text="Add Chapter" %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Batch Processing Modal -->
+<div class="modal fade" id="batchModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Batch Processing</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="batch-modal-content">
+                    <!-- Content will be dynamically loaded -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="batch-confirm-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CSRF Token -->
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+<!-- JavaScript for batch processing -->
+<script>
+    window.bookId = {{ book.id }};
+</script>
+<script src="{% static 'js/batch_processing.js' %}"></script>
+{% endblock %} 

@@ -1,0 +1,45 @@
+{% load static %}
+
+<div class="col-md-6 col-lg-4 mb-4">
+    <div class="card h-100">
+        <div class="card-body">
+            <h5 class="card-title">{{ book.title }}</h5>
+            <h6 class="card-subtitle mb-2 text-muted">
+                {% if book.author %}
+                    by {{ book.author.localized_name }}
+                {% else %}
+                    Unknown Author
+                {% endif %}
+            </h6>
+            
+            <div class="mb-3">
+                <span class="badge bg-{{ book.status|lower }}">
+                    {{ book.get_status_display }}
+                </span>
+                {% if book.language %}
+                    <span class="badge bg-info ms-1">{{ book.language.name }}</span>
+                {% endif %}
+            </div>
+
+            <p class="card-text">
+                <small class="text-muted">
+                    Created: {{ book.created_at|date:"M d, Y" }}<br>
+                    Chapters: {{ book.total_chapters }}<br>
+                    Words: {{ book.total_words|default:"0" }}
+                </small>
+            </p>
+        </div>
+        <div class="card-footer bg-transparent">
+            <div class="btn-group w-100" role="group">
+                <a href="{% url 'books:book_detail' book.id %}" 
+                   class="btn btn-outline-primary">
+                    View Details
+                </a>
+                <a href="{% url 'books:book_delete' book.id %}" 
+                   class="btn btn-outline-danger">
+                    Delete
+                </a>
+            </div>
+        </div>
+    </div>
+</div> 

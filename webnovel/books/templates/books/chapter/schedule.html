@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule Chapter - {{ chapter.title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Schedule Chapter Publication</h3>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ chapter.title }}</h5>
+                    <p class="card-text">
+                        <strong>Book:</strong> {{ chapter.book.title }}<br>
+                        <strong>Chapter:</strong> {{ chapter.chapter_number }}<br>
+                        <strong>Current Status:</strong> 
+                        <span class="badge {% if chapter.status == 'draft' %}bg-secondary{% elif chapter.status == 'scheduled' %}bg-warning{% elif chapter.status == 'published' %}bg-success{% else %}bg-info{% endif %}">
+                            {{ chapter.get_status_display }}
+                        </span>
+                    </p>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="{{ form.publish_datetime.id_for_label }}" class="form-label">
+                                {{ form.publish_datetime.label }}
+                            </label>
+                            {{ form.publish_datetime }}
+                            {% if form.publish_datetime.help_text %}
+                                <div class="form-text">{{ form.publish_datetime.help_text }}</div>
+                            {% endif %}
+                            {% if form.publish_datetime.errors %}
+                                <div class="alert alert-danger">
+                                    {{ form.publish_datetime.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'books:book_detail' chapter.book.pk %}" class="btn btn-secondary">
+                                Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                Schedule Publication
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
