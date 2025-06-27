@@ -170,38 +170,23 @@ class ChapterDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         chapter = self.object
-        
-        # Get available translation languages from parent book's translations
-        available_translation_languages = []
-        if chapter.book.has_translations:
-            # Get languages from the parent book's translations
-            translation_languages = chapter.book.translations.values_list('language', flat=True).distinct()
-            available_translation_languages = Language.objects.filter(id__in=translation_languages)
-        
-        # Also include languages that don't have translations yet
-        all_languages = Language.objects.exclude(
-            id=chapter.book.language.id if chapter.book.language else 0
-        )
-        
-        # Combine and remove duplicates
-        all_available_languages = list(available_translation_languages) + list(all_languages)
-        unique_languages = []
-        seen_ids = set()
-        for lang in all_available_languages:
-            if lang.id not in seen_ids:
-                unique_languages.append(lang)
-                seen_ids.add(lang.id)
-        
-        context["available_translation_languages"] = unique_languages
+
+        # Get all languages except the chapter's own language and those already translated
+        already_translated_ids = set(chapter.translations.values_list('language_id', flat=True))
+        if chapter.language:
+            already_translated_ids.add(chapter.language.id)
+        available_translation_languages = Language.objects.exclude(id__in=already_translated_ids)
+        context["available_translation_languages"] = available_translation_languages
+
         context["existing_translations"] = chapter.translations.all()
-        
+
         # Check if there are any completed translations (status = 'draft' and has content)
         completed_translations = chapter.translations.filter(
             status='draft',
             content__isnull=False
         ).exclude(content='')
         context["completed_translations"] = completed_translations
-        
+
         return context
 
 

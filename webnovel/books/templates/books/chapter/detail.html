@@ -303,48 +303,6 @@
     </div>
 </div>
 
-{% if existing_translations %}
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h4><i class="fas fa-language"></i> Chapter Translations</h4>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    {% for translation in existing_translations %}
-                        <div class="col-md-6 col-lg-4 mb-3">
-                            <div class="card border-info">
-                                <div class="card-body">
-                                    <h6 class="card-title">{{ translation.title }}</h6>
-                                    {% if translation.language %}
-                                        <span class="badge bg-info">{{ translation.language.name }}</span>
-                                    {% endif %}
-                                    <span class="badge bg-{{ translation.status|lower }} ms-1">
-                                        {{ translation.get_status_display }}
-                                    </span>
-                                    <p class="card-text mt-2">
-                                        <small class="text-muted">
-                                            Book: {{ translation.book.title }}<br>
-                                            Words: {{ translation.word_count }}<br>
-                                            Status: {{ translation.get_status_display }}
-                                        </small>
-                                    </p>
-                                    <a href="{% url 'books:chapter_detail' translation.id %}" 
-                                       class="btn btn-sm btn-outline-primary">
-                                        View Details
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-
 <script>
 function analyzeChapter() {
     const analyzeBtn = document.getElementById('analyzeBtn');

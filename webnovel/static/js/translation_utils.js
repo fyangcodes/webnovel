@@ -145,7 +145,7 @@ class TranslationManager {
 
     /**
      * Create translation buttons for available languages
-     * @param {number} chapterId - The ID of the chapter
+     * @param {number} chapterId - The ID of the original chapter
      * @param {Array} availableLanguages - Array of available language objects
      * @param {string} containerSelector - CSS selector for the container
      */
@@ -160,28 +160,30 @@ class TranslationManager {
         availableLanguages.forEach(language => {
             const button = document.createElement('button');
             button.className = 'btn btn-outline-primary btn-sm';
-            button.textContent = `Translate to ${language.name}`;
+            button.textContent = language.name;
+            button.title = `Start AI translation to ${language.name}`;
             button.onclick = () => {
                 button.disabled = true;
-                button.textContent = 'Starting...';
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
                 
                 this.initiateTranslation(chapterId, language.id, (data) => {
-                    button.textContent = 'Translation Started';
+                    button.innerHTML = '<i class="fas fa-check"></i> Started';
                     button.className = 'btn btn-success btn-sm';
                     
                     // Start polling for status updates
                     this.pollTranslationStatus(chapterId, 3000, (statusData) => {
-                        button.textContent = 'Translation Complete';
+                        button.innerHTML = '<i class="fas fa-check-double"></i> Complete';
                         button.className = 'btn btn-success btn-sm';
                         // Optionally reload the page or update the UI
                         setTimeout(() => location.reload(), 1000);
                     }, (error) => {
-                        button.textContent = 'Translation Failed';
+                        button.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
                         button.className = 'btn btn-danger btn-sm';
                     });
                 }, (error) => {
                     button.disabled = false;
-                    button.textContent = `Translate to ${language.name}`;
+                    button.innerHTML = language.name;
+                    button.className = 'btn btn-outline-primary btn-sm';
                 });
             };
             
