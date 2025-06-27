@@ -1,9 +1,10 @@
 from celery import shared_task
 from django.utils import timezone
-from .models import Book, Chapter, BookFile
+from .models import Book, Chapter, BookFile, Language
 from .utils import extract_text_from_file
 from llm_integration.services import LLMTranslationService
 import logging
+from django.utils.text import slugify
 
 logger = logging.getLogger(__name__)
 
@@ -277,43 +278,58 @@ def translate_chapter_async(chapter_id, target_language_code):
         
         llm_service = LLMTranslationService()
         
-        # Get context from original chapter if available
-        context_abstract = ""
-        if chapter.original_chapter and chapter.original_chapter.abstract:
-            context_abstract = chapter.original_chapter.abstract
+        # Step 1: Get the original chapter content and title
+        original_chapter = chapter.original_chapter
+        if not original_chapter:
+            raise ValueError("No original chapter found for translation")
         
-        # Translate the chapter content
-        translated_content = llm_service.translate_chapter(
-            chapter.content, 
-            target_language_code, 
-            context_abstract
-        )
+        original_content = original_chapter.content
+        original_title = original_chapter.title
         
-        # Translate the title
+        # Step 2: Translate the title properly (remove any "Translating:" prefix)
         translated_title = llm_service.translate_text(
-            chapter.title, 
+            original_title, 
             target_language_code
         )
         
-        # Generate abstract in target language
-        translated_abstract = llm_service.generate_chapter_abstract(
-            translated_content, 
+        # Step 3: Translate the content (1:1 translation, not abstract)
+        translated_content = llm_service.translate_chapter(
+            original_content, 
             target_language_code
         )
         
-        # Extract key terms in target language
+        # Step 4: Translate the abstract from original language (if it exists)
+        translated_abstract = ""
+        if original_chapter.abstract:
+            translated_abstract = llm_service.translate_text(
+                original_chapter.abstract, 
+                target_language_code
+            )
+        
+        # Step 5: Extract key terms from the translated content
         translated_key_terms = llm_service.extract_key_terms(
             translated_content, 
             target_language_code
         )
         
-        # Update the chapter with translated content
+        # Step 6: Update the chapter with translated content
         chapter.content = translated_content
         chapter.title = translated_title
         chapter.abstract = translated_abstract
         chapter.key_terms = translated_key_terms
         chapter.language = target_language
         chapter.status = "draft"  # Set back to draft for review
+        
+        # Step 7: Generate proper slug from translated title
+        base_slug = slugify(translated_title, allow_unicode=True)
+        # Ensure uniqueness
+        counter = 1
+        final_slug = base_slug
+        while Chapter.objects.filter(slug=final_slug).exclude(pk=chapter.pk).exists():
+            final_slug = f"{base_slug}-{counter}"
+            counter += 1
+        chapter.slug = final_slug
+        
         chapter.save()
         
         logger.info(f"Successfully translated chapter {chapter.id} to {target_language_code}")
@@ -341,4 +357,244 @@ def translate_chapter_async(chapter_id, target_language_code):
             'chapter_id': chapter_id,
             'error': str(e),
             'message': f'Translation failed: {str(e)}'
+        }
+
+
+@shared_task
+def translate_chapter_title_async(chapter_id, target_language_code):
+    """
+    Step 1: Translate only the chapter title
+    """
+    try:
+        chapter = Chapter.objects.get(id=chapter_id)
+        target_language = Language.objects.get(code=target_language_code)
+        original_chapter = chapter.original_chapter
+        
+        if not original_chapter:
+            raise ValueError("No original chapter found for translation")
+        
+        llm_service = LLMTranslationService()
+        
+        # Translate the title
+        translated_title = llm_service.translate_text(
+            original_chapter.title, 
+            target_language_code
+        )
+        
+        # Update chapter title
+        chapter.title = translated_title
+        chapter.save()
+        
+        logger.info(f"Successfully translated title for chapter {chapter.id} to {target_language_code}")
+        
+        return {
+            'success': True,
+            'chapter_id': chapter.id,
+            'translated_title': translated_title
+        }
+        
+    except Exception as e:
+        logger.error(f"Error translating title for chapter {chapter_id}: {str(e)}")
+        return {
+            'success': False,
+            'chapter_id': chapter_id,
+            'error': str(e)
+        }
+
+
+@shared_task
+def translate_chapter_content_async(chapter_id, target_language_code):
+    """
+    Step 2: Translate the chapter content
+    """
+    try:
+        chapter = Chapter.objects.get(id=chapter_id)
+        target_language = Language.objects.get(code=target_language_code)
+        original_chapter = chapter.original_chapter
+        
+        if not original_chapter:
+            raise ValueError("No original chapter found for translation")
+        
+        llm_service = LLMTranslationService()
+        
+        # Translate the content (1:1 translation, not abstract)
+        translated_content = llm_service.translate_chapter(
+            original_chapter.content, 
+            target_language_code
+        )
+        
+        # Update chapter content
+        chapter.content = translated_content
+        chapter.save()
+        
+        logger.info(f"Successfully translated content for chapter {chapter.id} to {target_language_code}")
+        
+        return {
+            'success': True,
+            'chapter_id': chapter.id,
+            'content_length': len(translated_content)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error translating content for chapter {chapter_id}: {str(e)}")
+        return {
+            'success': False,
+            'chapter_id': chapter_id,
+            'error': str(e)
+        }
+
+
+@shared_task
+def translate_chapter_metadata_async(chapter_id, target_language_code):
+    """
+    Step 3: Translate abstract and generate key terms
+    """
+    try:
+        chapter = Chapter.objects.get(id=chapter_id)
+        target_language = Language.objects.get(code=target_language_code)
+        original_chapter = chapter.original_chapter
+        
+        if not original_chapter:
+            raise ValueError("No original chapter found for translation")
+        
+        llm_service = LLMTranslationService()
+        
+        # Translate the abstract from original language (if it exists)
+        translated_abstract = ""
+        if original_chapter.abstract:
+            translated_abstract = llm_service.translate_text(
+                original_chapter.abstract, 
+                target_language_code
+            )
+        
+        # Extract key terms from the translated content
+        translated_key_terms = llm_service.extract_key_terms(
+            chapter.content, 
+            target_language_code
+        )
+        
+        # Update chapter metadata
+        chapter.abstract = translated_abstract
+        chapter.key_terms = translated_key_terms
+        chapter.save()
+        
+        logger.info(f"Successfully translated metadata for chapter {chapter.id} to {target_language_code}")
+        
+        return {
+            'success': True,
+            'chapter_id': chapter.id,
+            'abstract_length': len(translated_abstract),
+            'key_terms_count': len(translated_key_terms)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error translating metadata for chapter {chapter_id}: {str(e)}")
+        return {
+            'success': False,
+            'chapter_id': chapter_id,
+            'error': str(e)
+        }
+
+
+@shared_task
+def finalize_translated_chapter_async(chapter_id, target_language_code):
+    """
+    Step 4: Finalize the translated chapter (generate slug, set status, etc.)
+    """
+    try:
+        chapter = Chapter.objects.get(id=chapter_id)
+        target_language = Language.objects.get(code=target_language_code)
+        
+        # Generate proper slug from translated title
+        base_slug = slugify(chapter.title, allow_unicode=True)
+        # Ensure uniqueness
+        counter = 1
+        final_slug = base_slug
+        while Chapter.objects.filter(slug=final_slug).exclude(pk=chapter.pk).exists():
+            final_slug = f"{base_slug}-{counter}"
+            counter += 1
+        chapter.slug = final_slug
+        
+        # Set final status
+        chapter.status = "draft"  # Set back to draft for review
+        chapter.save()
+        
+        logger.info(f"Successfully finalized translated chapter {chapter.id}")
+        
+        return {
+            'success': True,
+            'chapter_id': chapter.id,
+            'final_slug': final_slug
+        }
+        
+    except Exception as e:
+        logger.error(f"Error finalizing translated chapter {chapter_id}: {str(e)}")
+        return {
+            'success': False,
+            'chapter_id': chapter_id,
+            'error': str(e)
+        }
+
+
+@shared_task
+def translate_chapter_step_by_step_async(chapter_id, target_language_code):
+    """
+    Master task that orchestrates the translation process step by step
+    """
+    try:
+        chapter = Chapter.objects.get(id=chapter_id)
+        target_language = Language.objects.get(code=target_language_code)
+        
+        # Update chapter status to indicate translation is in progress
+        chapter.status = "translating"
+        chapter.save()
+        
+        logger.info(f"Starting step-by-step translation for chapter {chapter_id} to {target_language_code}")
+        
+        # Step 1: Translate title
+        title_result = translate_chapter_title_async(chapter_id, target_language_code)
+        if not title_result['success']:
+            raise Exception(f"Title translation failed: {title_result['error']}")
+        
+        # Step 2: Translate content
+        content_result = translate_chapter_content_async(chapter_id, target_language_code)
+        if not content_result['success']:
+            raise Exception(f"Content translation failed: {content_result['error']}")
+        
+        # Step 3: Translate metadata
+        metadata_result = translate_chapter_metadata_async(chapter_id, target_language_code)
+        if not metadata_result['success']:
+            raise Exception(f"Metadata translation failed: {metadata_result['error']}")
+        
+        # Step 4: Finalize chapter
+        finalize_result = finalize_translated_chapter_async(chapter_id, target_language_code)
+        if not finalize_result['success']:
+            raise Exception(f"Finalization failed: {finalize_result['error']}")
+        
+        logger.info(f"Successfully completed step-by-step translation for chapter {chapter_id}")
+        
+        return {
+            'success': True,
+            'chapter_id': chapter_id,
+            'target_language': target_language_code,
+            'message': f'Chapter translated successfully to {target_language.name}',
+            'steps_completed': ['title', 'content', 'metadata', 'finalize']
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in step-by-step translation for chapter {chapter_id}: {str(e)}")
+        
+        # Update chapter status to indicate error
+        try:
+            chapter = Chapter.objects.get(id=chapter_id)
+            chapter.status = "error"
+            chapter.save()
+        except:
+            pass
+        
+        return {
+            'success': False,
+            'chapter_id': chapter_id,
+            'error': str(e),
+            'message': f'Step-by-step translation failed: {str(e)}'
         }

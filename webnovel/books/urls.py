@@ -15,6 +15,7 @@ from .views import (
     ChapterScheduleView,
     ChapterPublishNowView,
     ChapterCreateTranslationView,
+    InitiateChapterTranslationView,
     CheckTranslationStatusView,
     AnalyzeChapterView,
     BatchAnalyzeChaptersView,
@@ -38,13 +39,14 @@ urlpatterns = [
     path("chapters/<int:pk>/", ChapterDetailView.as_view(), name="chapter_detail"),
     path("chapters/<int:pk>/update/", ChapterUpdateView.as_view(), name="chapter_update"),
     path("chapters/<int:pk>/delete/", ChapterDeleteView.as_view(), name="chapter_delete"),
-    path("chapters/<int:chapter_id>/translate/<int:language_id>/", ChapterCreateTranslationView.as_view(), name="chapter_create_translation"),
-    path("chapters/<int:pk>/check-translation-status/", CheckTranslationStatusView.as_view(), name="chapter_check_translation_status"),
-    
-    # Chapter publishing views
+        
+    # Chapter additional views
     path("chapters/<int:pk>/schedule/", ChapterScheduleView.as_view(), name="chapter_schedule"),
     path("chapters/<int:pk>/publish/", ChapterPublishNowView.as_view(), name="chapter_publish_now"),
     path("chapters/<int:pk>/analyze/", AnalyzeChapterView.as_view(), name="chapter_analyze"),
+    path("chapters/<int:chapter_id>/translate/<int:language_id>/", ChapterCreateTranslationView.as_view(), name="chapter_create_translation"),
+    path("chapters/<int:chapter_id>/initiate-translation/<int:language_id>/", InitiateChapterTranslationView.as_view(), name="chapter_initiate_translation"),
+    path("chapters/<int:pk>/check-translation-status/", CheckTranslationStatusView.as_view(), name="chapter_check_translation_status"),
     
     # Batch processing views
     path("batch-analyze-chapters/", BatchAnalyzeChaptersView.as_view(), name="batch_analyze_chapters"),

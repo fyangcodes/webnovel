@@ -1,0 +1,94 @@
+{% load static %}
+
+<!-- Translation Controls -->
+<div class="card mt-3">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="fas fa-language"></i> Translation Options
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if available_translation_languages %}
+            <div class="mb-3">
+                <h6>Available Languages:</h6>
+                <div id="translation-buttons-container" class="d-flex flex-wrap gap-2">
+                    {% for language in available_translation_languages %}
+                        <button class="btn btn-outline-primary btn-sm" 
+                                onclick="window.translationManager.initiateTranslation({{ chapter.id }}, {{ language.id }})">
+                            <i class="fas fa-language"></i> {{ language.name }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+        {% else %}
+            <p class="text-muted">No additional languages available for translation.</p>
+        {% endif %}
+
+        {% if existing_translations %}
+            <div class="mt-3">
+                <h6>Existing Translations:</h6>
+                <div class="list-group">
+                    {% for translation in existing_translations %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ translation.language.name }}</strong>
+                                <span class="badge bg-{% if translation.status == 'translating' %}warning{% elif translation.status == 'draft' %}success{% elif translation.status == 'error' %}danger{% else %}secondary{% endif %} ms-2">
+                                    {{ translation.get_status_display }}
+                                </span>
+                            </div>
+                            <a href="{% url 'books:chapter_detail' translation.pk %}" class="btn btn-sm btn-outline-primary">
+                                View
+                            </a>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        {% if completed_translations %}
+            <div class="mt-3">
+                <h6>Completed Translations:</h6>
+                <div class="list-group">
+                    {% for translation in completed_translations %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ translation.language.name }}</strong>
+                                <small class="text-muted d-block">{{ translation.title }}</small>
+                            </div>
+                            <a href="{% url 'books:chapter_detail' translation.pk %}" class="btn btn-sm btn-success">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Translation Status Polling -->
+<script>
+    // Initialize translation manager if not already done
+    if (typeof window.translationManager === 'undefined') {
+        window.translationManager = new TranslationManager();
+    }
+
+    // Set up automatic status checking for translating chapters
+    {% if existing_translations %}
+        {% for translation in existing_translations %}
+            {% if translation.status == 'translating' %}
+                window.translationManager.pollTranslationStatus(
+                    {{ chapter.id }}, 
+                    3000, 
+                    function(data) {
+                        // Translation completed, reload page
+                        location.reload();
+                    },
+                    function(error) {
+                        console.error('Translation polling error:', error);
+                    }
+                );
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+</script> 

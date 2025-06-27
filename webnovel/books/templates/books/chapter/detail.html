@@ -31,6 +31,22 @@
 </style>
 {% endblock %}
 
+{% block extra_js %}
+<script src="{% static 'js/translation_utils.js' %}"></script>
+<script>
+    // Initialize translation data for JavaScript
+    window.chapterId = {{ chapter.id }};
+    window.availableLanguages = [];
+    {% for language in available_translation_languages %}
+        window.availableLanguages.push({
+            id: {{ language.id }}, 
+            name: "{{ language.name }}", 
+            code: "{{ language.code }}"
+        });
+    {% endfor %}
+</script>
+{% endblock %}
+
 {% block books_content %}
 {% if chapter.status == 'draft' and chapter.original_chapter and request.GET.translation_complete %}
 <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -207,43 +223,8 @@
             </div>
         </div>
         
-        <!-- Translation Section -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-language"></i> Translation</h5>
-            </div>
-            <div class="card-body">
-                {% if existing_translations %}
-                    <div class="mb-3">
-                        <h6>Existing Translations:</h6>
-                        {% for translation in existing_translations %}
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="badge bg-success">{{ translation.language.name }}</span>
-                                <a href="{% url 'books:chapter_detail' translation.id %}" class="btn btn-sm btn-outline-primary">
-                                    View
-                                </a>
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-                
-                {% if available_translation_languages %}
-                    <div class="mb-3">
-                        <h6>Create Translation:</h6>
-                        <div class="d-grid gap-2">
-                            {% for language in available_translation_languages %}
-                                <a href="{% url 'books:chapter_create_translation' chapter.id language.id %}" 
-                                   class="btn btn-outline-info btn-sm">
-                                    <i class="fas fa-language"></i> {{ language.name }}
-                                </a>
-                            {% endfor %}
-                        </div>
-                    </div>
-                {% else %}
-                    <p class="text-muted small">No additional languages available for translation.</p>
-                {% endif %}
-            </div>
-        </div>
+        <!-- Translation Controls -->
+        {% include "books/partials/translation_controls.html" %}
         
         {% if chapter.status == 'draft' %}
             <div class="card mt-3">
@@ -409,60 +390,27 @@ function analyzeChapter() {
     });
 }
 
-// Auto-refresh for translating chapters
+// Auto-refresh for translating chapters using the new translation manager
 var chapterStatus = '{{ chapter.status }}';
 if (chapterStatus === 'translating') {
-    var refreshCount = 0;
-    var maxRefreshAttempts = 30; // 5 minutes with 10-second intervals
-
-    function checkTranslationStatus() {
-        if (refreshCount >= maxRefreshAttempts) {
-            console.log('Max refresh attempts reached');
-            return;
-        }
-        
-        refreshCount++;
-        console.log('Checking translation status (attempt ' + refreshCount + '/' + maxRefreshAttempts + ')');
-        
-        // Check translation status via AJAX
-        fetch('{% url "books:chapter_check_translation_status" chapter.pk %}', {
-            method: 'GET',
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+    // Use the new translation manager for status polling
+    if (window.translationManager) {
+        window.translationManager.pollTranslationStatus(
+            {{ chapter.id }}, 
+            5000, 
+            function(data) {
+                // Translation completed, reload page
+                window.location.href = window.location.pathname + '?translation_complete=1';
             },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                if (data.is_complete) {
-                    // Translation is complete, reload page to show results
-                    window.location.href = window.location.pathname + '?translation_complete=1';
-                } else if (data.has_error) {
-                    // Translation failed, reload page to show error
-                    window.location.reload();
-                } else {
-                    // Still translating, check again in 10 seconds
-                    setTimeout(checkTranslationStatus, 10000);
-                }
-            } else {
-                console.error('Error checking translation status:', data.error);
+            function(error) {
+                console.error('Translation polling error:', error);
                 // On error, reload page after 30 seconds
                 setTimeout(function() {
                     window.location.reload();
                 }, 30000);
             }
-        })
-        .catch(error => {
-            console.error('Error checking translation status:', error);
-            // On error, reload page after 30 seconds
-            setTimeout(function() {
-                window.location.reload();
-            }, 30000);
-        });
+        );
     }
-
-    // Start checking translation status
-    checkTranslationStatus();
 }
 </script>
 
