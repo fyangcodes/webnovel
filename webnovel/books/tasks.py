@@ -260,3 +260,85 @@ def schedule_chapter_publishing_async(chapter_id, publish_datetime):
     except Exception as e:
         logger.error(f"Error scheduling chapter {chapter_id}: {str(e)}")
         return False
+
+
+@shared_task
+def translate_chapter_async(chapter_id, target_language_code):
+    """
+    Translate a chapter to the target language using AI
+    """
+    try:
+        chapter = Chapter.objects.get(id=chapter_id)
+        target_language = Language.objects.get(code=target_language_code)
+        
+        # Update chapter status to indicate translation is in progress
+        chapter.status = "translating"
+        chapter.save()
+        
+        llm_service = LLMTranslationService()
+        
+        # Get context from original chapter if available
+        context_abstract = ""
+        if chapter.original_chapter and chapter.original_chapter.abstract:
+            context_abstract = chapter.original_chapter.abstract
+        
+        # Translate the chapter content
+        translated_content = llm_service.translate_chapter(
+            chapter.content, 
+            target_language_code, 
+            context_abstract
+        )
+        
+        # Translate the title
+        translated_title = llm_service.translate_text(
+            chapter.title, 
+            target_language_code
+        )
+        
+        # Generate abstract in target language
+        translated_abstract = llm_service.generate_chapter_abstract(
+            translated_content, 
+            target_language_code
+        )
+        
+        # Extract key terms in target language
+        translated_key_terms = llm_service.extract_key_terms(
+            translated_content, 
+            target_language_code
+        )
+        
+        # Update the chapter with translated content
+        chapter.content = translated_content
+        chapter.title = translated_title
+        chapter.abstract = translated_abstract
+        chapter.key_terms = translated_key_terms
+        chapter.language = target_language
+        chapter.status = "draft"  # Set back to draft for review
+        chapter.save()
+        
+        logger.info(f"Successfully translated chapter {chapter.id} to {target_language_code}")
+        
+        return {
+            'success': True,
+            'chapter_id': chapter.id,
+            'target_language': target_language_code,
+            'message': f'Chapter "{translated_title}" translated successfully to {target_language.name}'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error translating chapter {chapter_id}: {str(e)}")
+        
+        # Update chapter status to indicate error
+        try:
+            chapter = Chapter.objects.get(id=chapter_id)
+            chapter.status = "error"
+            chapter.save()
+        except:
+            pass
+        
+        return {
+            'success': False,
+            'chapter_id': chapter_id,
+            'error': str(e),
+            'message': f'Translation failed: {str(e)}'
+        }

@@ -148,6 +148,13 @@ class Book(TimeStampedModel):
             while Book.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
                 self.slug = f"{base_slug}-{counter}"
                 counter += 1
+        
+        # Set default language to first available language if none specified
+        if not self.language:
+            first_language = Language.objects.first()
+            if first_language:
+                self.language = first_language
+        
         super().save(*args, **kwargs)
 
     def update_metadata(self):
@@ -193,10 +200,12 @@ class Book(TimeStampedModel):
 class Chapter(TimeStampedModel):
     STATUS_CHOICES = [
         ("draft", "Draft"),
+        ("translating", "Translating"),
         ("scheduled", "Scheduled"),
         ("published", "Published"),
         ("archived", "Archived"),
         ("private", "Private"),
+        ("error", "Error"),
     ]
 
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")

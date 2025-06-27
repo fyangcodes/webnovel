@@ -18,8 +18,8 @@ import json
 from django.views.decorators.http import require_http_methods
 from django.views import View
 
-from .models import Book, Chapter
-from .tasks import process_bookfile_async, schedule_chapter_publishing_async
+from .models import Book, Chapter, Language
+from .tasks import process_bookfile_async, schedule_chapter_publishing_async, translate_chapter_async
 from .forms import BookFileForm, ChapterForm, BookForm, ChapterScheduleForm
 
 
@@ -163,6 +163,36 @@ class ChapterDetailView(LoginRequiredMixin, DetailView):
 
     def get_queryset(self):
         return Chapter.objects.filter(book__owner=self.request.user)
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        chapter = self.object
+        
+        # Get available translation languages from parent book's translations
+        available_translation_languages = []
+        if chapter.book.has_translations:
+            # Get languages from the parent book's translations
+            translation_languages = chapter.book.translations.values_list('language', flat=True).distinct()
+            available_translation_languages = Language.objects.filter(id__in=translation_languages)
+        
+        # Also include languages that don't have translations yet
+        all_languages = Language.objects.exclude(
+            id=chapter.book.language.id if chapter.book.language else 0
+        )
+        
+        # Combine and remove duplicates
+        all_available_languages = list(available_translation_languages) + list(all_languages)
+        unique_languages = []
+        seen_ids = set()
+        for lang in all_available_languages:
+            if lang.id not in seen_ids:
+                unique_languages.append(lang)
+                seen_ids.add(lang.id)
+        
+        context["available_translation_languages"] = unique_languages
+        context["existing_translations"] = chapter.translations.all()
+        
+        return context
 
 
 class ChapterUpdateView(LoginRequiredMixin, UpdateView):
@@ -367,3 +397,144 @@ class BatchAnalyzeChaptersView(LoginRequiredMixin, View):
             return JsonResponse({'success': False, 'error': 'Invalid JSON data'})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
+
+
+class BookCreateTranslationView(LoginRequiredMixin, CreateView):
+    """View for creating a new book as a translation of an existing book"""
+    
+    model = Book
+    form_class = BookForm
+    template_name = "books/book/form.html"
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["original_book"] = get_object_or_404(
+            Book, pk=self.kwargs["book_id"], owner=self.request.user
+        )
+        context["is_translation"] = True
+        return context
+    
+    def form_valid(self, form):
+        original_book = get_object_or_404(
+            Book, pk=self.kwargs["book_id"], owner=self.request.user
+        )
+        form.instance.owner = self.request.user
+        form.instance.original_book = original_book
+        
+        # Set the language to a different one than the original if possible
+        if not form.instance.language:
+            # Get available languages excluding the original book's language
+            available_languages = Language.objects.exclude(
+                id=original_book.language.id if original_book.language else 0
+            )
+            if available_languages.exists():
+                form.instance.language = available_languages.first()
+        
+        response = super().form_valid(form)
+        messages.success(
+            self.request, 
+            f"Translation '{form.instance.title}' created successfully from '{original_book.title}'!"
+        )
+        return response
+    
+    def get_success_url(self):
+        return reverse_lazy("books:book_detail", kwargs={"pk": self.object.pk})
+
+
+class ChapterCreateTranslationView(LoginRequiredMixin, CreateView):
+    """View for creating a new chapter as a translation of an existing chapter"""
+    
+    model = Chapter
+    form_class = ChapterForm
+    template_name = "books/chapter/form.html"
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["original_chapter"] = get_object_or_404(
+            Chapter, pk=self.kwargs["chapter_id"], book__owner=self.request.user
+        )
+        context["is_translation"] = True
+        
+        # Get target language from URL parameter
+        target_language_id = self.kwargs.get("language_id")
+        if target_language_id:
+            context["target_language"] = get_object_or_404(Language, id=target_language_id)
+        
+        return context
+    
+    def form_valid(self, form):
+        original_chapter = get_object_or_404(
+            Chapter, pk=self.kwargs["chapter_id"], book__owner=self.request.user
+        )
+        
+        # Get target language
+        target_language_id = self.kwargs.get("language_id")
+        target_language = get_object_or_404(Language, id=target_language_id) if target_language_id else None
+        
+        # Find or create the translated book
+        translated_book = None
+        if original_chapter.book.has_translations:
+            # Try to find existing translated book in the target language
+            translated_book = original_chapter.book.get_translation(target_language)
+        
+        if not translated_book:
+            # Create a new translated book if it doesn't exist
+            translated_book = Book.objects.create(
+                title=f"{original_chapter.book.title} ({target_language.name})",
+                language=target_language,
+                original_book=original_chapter.book,
+                owner=self.request.user,
+                status="draft"
+            )
+        
+        # Create the chapter with basic info (content will be filled by AI translation)
+        form.instance.book = translated_book
+        form.instance.original_chapter = original_chapter
+        form.instance.language = target_language
+        form.instance.chapter_number = original_chapter.chapter_number
+        form.instance.status = "translating"  # Set status to indicate translation is in progress
+        
+        response = super().form_valid(form)
+        
+        # Start the AI translation task
+        task = translate_chapter_async.delay(self.object.id, target_language.code)
+        
+        messages.success(
+            self.request, 
+            f"Chapter translation started! The AI is now translating '{original_chapter.title}' to {target_language.name}. "
+            f"You'll be notified when the translation is complete. Task ID: {task.id}"
+        )
+        
+        return response
+    
+    def get_success_url(self):
+        return reverse_lazy("books:chapter_detail", kwargs={"pk": self.object.pk})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CheckTranslationStatusView(LoginRequiredMixin, View):
+    """View for checking translation status via AJAX"""
+    
+    def get(self, request, *args, **kwargs):
+        try:
+            chapter_id = kwargs.get('pk')
+            chapter = get_object_or_404(
+                Chapter, 
+                pk=chapter_id, 
+                book__owner=request.user
+            )
+            
+            return JsonResponse({
+                'success': True,
+                'chapter_id': chapter.id,
+                'status': chapter.status,
+                'is_translating': chapter.status == 'translating',
+                'is_complete': chapter.status == 'draft' and chapter.original_chapter is not None,
+                'has_error': chapter.status == 'error'
+            })
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            })
