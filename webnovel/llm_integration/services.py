@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Try to import provider-specific packages, with fallbacks
 try:
     from langchain_openai import ChatOpenAI
+
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
@@ -20,6 +21,7 @@ except ImportError:
 
 try:
     from langchain_anthropic import ChatAnthropic
+
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
@@ -27,6 +29,7 @@ except ImportError:
 
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
+
     GOOGLE_AVAILABLE = True
 except ImportError:
     GOOGLE_AVAILABLE = False
@@ -34,6 +37,7 @@ except ImportError:
 
 try:
     from langchain_community.chat_models import ChatCohere
+
     COHERE_AVAILABLE = True
 except ImportError:
     COHERE_AVAILABLE = False
@@ -41,23 +45,13 @@ except ImportError:
 
 try:
     from langchain_community.llms import Ollama
+
     OLLAMA_AVAILABLE = True
 except ImportError:
     OLLAMA_AVAILABLE = False
     logger.warning("langchain_community not available, Ollama provider disabled")
 
 
-def decode_gb_text(input_data, encoding="gbk"):
-    """
-    Decodes bytes or str in GB encoding to Unicode string.
-    If input is already str, returns as is.
-    """
-    if isinstance(input_data, bytes):
-        return input_data.decode(encoding)
-    elif isinstance(input_data, str):
-        return input_data
-    else:
-        raise TypeError("Input must be bytes or str")
 
 
 class LLMTranslationService:
@@ -80,7 +74,7 @@ class LLMTranslationService:
     def __init__(self, api_key=None, model=None, provider="openai"):
         """
         Initialize LLM service with provider-agnostic interface using LangChain
-        
+
         Args:
             api_key: API key for the LLM provider
             model: Model name (e.g., 'gpt-3.5-turbo', 'claude-3-sonnet-20240229')
@@ -88,13 +82,13 @@ class LLMTranslationService:
         """
         self.api_key = api_key or getattr(settings, "LLM_API_KEY", None)
         self.provider = provider or getattr(settings, "LLM_PROVIDER", "openai")
-        
+
         # Set default model based on provider
         if model:
             self.model = model
         else:
             self.model = getattr(settings, "LLM_MODEL_NAME", self._get_default_model())
-        
+
         # Initialize the LLM client
         self.llm = self._initialize_llm()
 
@@ -121,7 +115,7 @@ class LLMTranslationService:
                     model=self.model,
                     openai_api_key=api_key,
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=2000,
                 )
             elif self.provider == "anthropic":
                 if not ANTHROPIC_AVAILABLE:
@@ -131,7 +125,7 @@ class LLMTranslationService:
                     model=self.model,
                     anthropic_api_key=api_key,
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=2000,
                 )
             elif self.provider == "google":
                 if not GOOGLE_AVAILABLE:
@@ -141,7 +135,7 @@ class LLMTranslationService:
                     model=self.model,
                     google_api_key=api_key,
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=2000,
                 )
             elif self.provider == "cohere":
                 if not COHERE_AVAILABLE:
@@ -151,27 +145,165 @@ class LLMTranslationService:
                     model=self.model,
                     cohere_api_key=api_key,
                     temperature=0.3,
-                    max_tokens=2000
+                    max_tokens=2000,
                 )
             elif self.provider == "ollama":
                 if not OLLAMA_AVAILABLE:
                     raise ImportError("langchain_community not available")
-                return Ollama(
-                    model=self.model,
-                    temperature=0.3
-                )
+                return Ollama(model=self.model, temperature=0.3)
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}")
         except Exception as e:
-            logger.error(f"Error initializing LLM for provider {self.provider}: {str(e)}")
+            logger.error(
+                f"Error initializing LLM for provider {self.provider}: {str(e)}"
+            )
             raise
 
-    def _call_llm(self, messages, temperature=0.3, max_tokens=2000, operation='other', 
-                  source_book=None, source_chapter=None, target_book=None, target_chapter=None,
-                  source_lang=None, target_lang=None, user=None):
+    def switch_provider(self, provider: str, api_key: str = None, model: str = None):
+        """
+        Switch to a different LLM provider
+
+        Args:
+            provider: Provider name ('openai', 'anthropic', 'google', etc.)
+            api_key: API key for the new provider
+            model: Model name for the new provider
+        """
+        self.provider = provider
+        if api_key:
+            self.api_key = api_key
+        if model:
+            self.model = model
+        else:
+            self.model = self._get_default_model()
+
+        # Reinitialize the LLM client
+        self.llm = self._initialize_llm()
+        logger.info(f"Switched to {provider} provider with model {self.model}")
+
+    def get_available_providers(self) -> List[str]:
+        """Get list of available LLM providers"""
+        available = []
+        if OPENAI_AVAILABLE:
+            available.append("openai")
+        if ANTHROPIC_AVAILABLE:
+            available.append("anthropic")
+        if GOOGLE_AVAILABLE:
+            available.append("google")
+        if COHERE_AVAILABLE:
+            available.append("cohere")
+        if OLLAMA_AVAILABLE:
+            available.append("ollama")
+
+        # Add providers that don't require specific packages
+        available.extend(["mistral", "huggingface", "local"])
+        return available
+
+    def get_provider_models(self, provider: str = None) -> List[str]:
+        """Get available models for a provider"""
+        provider = provider or self.provider
+
+        models = {
+            "openai": [
+                "gpt-4o",
+                "gpt-4o-mini",
+                "gpt-4-turbo",
+                "gpt-3.5-turbo",
+                "gpt-4",
+            ],
+            "anthropic": [
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022",
+                "claude-3-opus-20240229",
+                "claude-3-sonnet-20240229",
+                "claude-3-haiku-20240307",
+            ],
+            "google": [
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
+                "gemini-pro",
+                "gemini-pro-vision",
+            ],
+            "cohere": ["command", "command-light", "command-nightly"],
+            "mistral": [
+                "mistral-large-latest",
+                "mistral-medium-latest",
+                "mistral-small-latest",
+            ],
+            "ollama": [
+                "llama2",
+                "llama2:13b",
+                "llama2:70b",
+                "mistral",
+                "codellama",
+                "neural-chat",
+            ],
+        }
+
+        return models.get(provider, [])
+
+    def get_chain(self, prompt_template=None):
+        """
+        Get a LangChain chain for more advanced workflows
+
+        Args:
+            prompt_template: Optional prompt template for the chain
+
+        Returns:
+            LangChain chain instance
+        """
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+
+        if prompt_template is None:
+            prompt_template = ChatPromptTemplate.from_messages(
+                [("system", "You are a helpful assistant."), ("user", "{input}")]
+            )
+
+        chain = prompt_template | self.llm | StrOutputParser()
+        return chain
+
+    def get_memory_chain(self):
+        """
+        Get a LangChain chain with conversation memory
+
+        Returns:
+            LangChain chain with memory
+        """
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.memory import ConversationBufferMemory
+
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", "You are a helpful assistant."),
+                ("human", "{input}"),
+            ]
+        )
+
+        memory = ConversationBufferMemory(
+            return_messages=True, memory_key="chat_history"
+        )
+
+        chain = prompt | self.llm | StrOutputParser()
+        return chain, memory
+
+    def _call_llm(
+        self,
+        messages,
+        temperature=0.3,
+        max_tokens=2000,
+        operation="other",
+        source_book=None,
+        source_chapter=None,
+        target_book=None,
+        target_chapter=None,
+        source_lang=None,
+        target_lang=None,
+        user=None,
+    ):
         """
         Make LLM API call using LangChain with comprehensive tracking
-        
+
         Args:
             messages: List of message dictionaries or LangChain messages
             temperature: Sampling temperature
@@ -184,16 +316,16 @@ class LLMTranslationService:
             source_lang: Source language code
             target_lang: Target language code
             user: User making the request
-            
+
         Returns:
             LLM response content
         """
         start_time = time.time()
-        
+
         try:
             # Import tracking models here to avoid circular imports
             from .models import LLMServiceCall, LLMProvider
-            
+
             # Convert dict messages to LangChain messages if needed
             if messages and isinstance(messages[0], dict):
                 langchain_messages = []
@@ -204,14 +336,14 @@ class LLMTranslationService:
                         langchain_messages.append(HumanMessage(content=msg["content"]))
                     # Add other message types as needed
                 messages = langchain_messages
-            
+
             # Calculate approximate input tokens
             input_text = ""
             for msg in messages:
-                if hasattr(msg, 'content'):
+                if hasattr(msg, "content"):
                     input_text += str(msg.content)
             input_tokens = len(input_text.split())  # Rough approximation
-            
+
             # Update temperature and max_tokens if different from default
             if temperature != 0.3 or max_tokens != 2000:
                 # Create a new instance with updated parameters
@@ -221,21 +353,21 @@ class LLMTranslationService:
                 response = temp_llm.invoke(messages)
             else:
                 response = self.llm.invoke(messages)
-            
+
             response_time = int((time.time() - start_time) * 1000)
             output_tokens = len(response.content.split())
-            
+
             # Track successful call
             try:
                 provider_obj, created = LLMProvider.objects.get_or_create(
                     name=self.provider,
                     defaults={
-                        'display_name': self.provider.title(),
-                        'default_model': self.model,
-                        'available_models': self.get_provider_models(self.provider)
-                    }
+                        "display_name": self.provider.title(),
+                        "default_model": self.model,
+                        "available_models": self.get_provider_models(self.provider),
+                    },
                 )
-                
+
                 LLMServiceCall.objects.create(
                     provider=provider_obj,
                     model_name=self.model,
@@ -244,7 +376,7 @@ class LLMTranslationService:
                     output_tokens=output_tokens,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    status='success',
+                    status="success",
                     response_time_ms=response_time,
                     source_book=source_book,
                     source_chapter=source_chapter,
@@ -256,37 +388,37 @@ class LLMTranslationService:
                 )
             except Exception as tracking_error:
                 logger.warning(f"Failed to track LLM call: {tracking_error}")
-            
+
             return response.content.strip()
-            
+
         except Exception as e:
             response_time = int((time.time() - start_time) * 1000)
-            
+
             # Track failed call
             try:
                 from .models import LLMServiceCall, LLMProvider
-                
+
                 provider_obj, created = LLMProvider.objects.get_or_create(
                     name=self.provider,
                     defaults={
-                        'display_name': self.provider.title(),
-                        'default_model': self.model,
-                        'available_models': self.get_provider_models(self.provider)
-                    }
+                        "display_name": self.provider.title(),
+                        "default_model": self.model,
+                        "available_models": self.get_provider_models(self.provider),
+                    },
                 )
-                
+
                 # Determine error status
-                error_status = 'error'
-                if 'timeout' in str(e).lower():
-                    error_status = 'timeout'
-                elif 'rate' in str(e).lower() or 'quota' in str(e).lower():
-                    error_status = 'rate_limited'
-                
+                error_status = "error"
+                if "timeout" in str(e).lower():
+                    error_status = "timeout"
+                elif "rate" in str(e).lower() or "quota" in str(e).lower():
+                    error_status = "rate_limited"
+
                 LLMServiceCall.objects.create(
                     provider=provider_obj,
                     model_name=self.model,
                     operation=operation,
-                    input_tokens=input_tokens if 'input_tokens' in locals() else None,
+                    input_tokens=input_tokens if "input_tokens" in locals() else None,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     status=error_status,
@@ -302,11 +434,15 @@ class LLMTranslationService:
                 )
             except Exception as tracking_error:
                 logger.warning(f"Failed to track LLM error: {tracking_error}")
-            
-            logger.error(f"Error calling LLM API ({self.provider}/{self.model}): {str(e)}")
+
+            logger.error(
+                f"Error calling LLM API ({self.provider}/{self.model}): {str(e)}"
+            )
             raise
 
-    def divide_into_chapters(self, text: str, book=None, user=None) -> List[Dict[str, Any]]:
+    def divide_into_chapters(
+        self, text: str, book=None, user=None
+    ) -> List[Dict[str, Any]]:
         """
         Use LLM to intelligently divide book into chapters
         Returns list of dicts with 'title' and 'text' keys
@@ -329,34 +465,36 @@ class LLMTranslationService:
         - Topic changes
         - Paragraph breaks that indicate new sections
         """
+        # Currently not working, so we're using the simple division method below
+        # try:
+        #     messages = [
+        #         SystemMessage(
+        #             content="You are a helpful assistant that specializes in analyzing and structuring text content."
+        #         ),
+        #         HumanMessage(content=prompt),
+        #     ]
 
-        try:
-            messages = [
-                SystemMessage(content="You are a helpful assistant that specializes in analyzing and structuring text content."),
-                HumanMessage(content=prompt),
-            ]
-            
-            result = self._call_llm(
-                messages, 
-                temperature=0.3, 
-                max_tokens=4000,
-                operation='chapter_division',
-                book=book,
-                user=user
-            )
+        #     result = self._call_llm(
+        #         messages,
+        #         temperature=0.3,
+        #         max_tokens=4000,
+        #         operation="chapter_division",
+        #         book=book,
+        #         user=user,
+        #     )
 
-            # Try to parse JSON response
-            try:
-                chapters = json.loads(result)
-                if isinstance(chapters, list):
-                    return chapters
-            except json.JSONDecodeError:
-                logger.warning(
-                    "LLM response was not valid JSON, falling back to simple division"
-                )
+        #     # Try to parse JSON response
+        #     try:
+        #         chapters = json.loads(result)
+        #         if isinstance(chapters, list):
+        #             return chapters
+        #     except json.JSONDecodeError:
+        #         logger.warning(
+        #             "LLM response was not valid JSON, falling back to simple division"
+        #         )
 
-        except Exception as e:
-            logger.error(f"Error calling LLM API: {str(e)}")
+        # except Exception as e:
+        #     logger.error(f"Error calling LLM API: {str(e)}")
 
         # Fallback: Simple chapter division
         return self._simple_chapter_division(text)
@@ -364,12 +502,13 @@ class LLMTranslationService:
     def _simple_chapter_division(self, text: str) -> List[Dict[str, Any]]:
         """Simple fallback chapter division by sentence count"""
         # Split by sentences (simple approach)
-        sentences = re.split(r'[。！？.!?]', text)
+        sentences = re.split(r"[。！？.!?]", text)
 
         chapters = []
         # Regex for common chapter headings in Chinese and English
         chapter_heading_pattern = re.compile(
-            r'(第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\\s*\\d+|CHAPTER\\s*\\d+)', re.UNICODE
+            r"(第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\\s*\\d+|CHAPTER\\s*\\d+)",
+            re.UNICODE,
         )
 
         # Find all chapter headings and their positions
@@ -381,17 +520,14 @@ class LLMTranslationService:
                 end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
                 chapter_title = match.group()
                 chapter_text = text[start:end].strip()
-                chapters.append({
-                    "title": chapter_title,
-                    "text": chapter_text
-                })
+                chapters.append({"title": chapter_title, "text": chapter_text})
             return chapters
 
         # Fallback: split by sentence-ending punctuation and character count
         # Chinese sentence-ending punctuation: 。！？!? (fullwidth and halfwidth)
-        sentence_endings = re.compile(r'[。！？!?]')
+        sentence_endings = re.compile(r"[。！？!?]")
         sentences = sentence_endings.split(text)
-        current_chunk = ''
+        current_chunk = ""
         chapter_num = 1
         max_chars_per_chapter = 5000  # Define this variable
 
@@ -399,32 +535,37 @@ class LLMTranslationService:
             if not sentence.strip():
                 continue
             if current_chunk:
-                current_chunk += sentence + '。'  # Add back a period for readability
+                current_chunk += sentence + "。"  # Add back a period for readability
             else:
-                current_chunk = sentence + '。'
+                current_chunk = sentence + "。"
             if len(current_chunk) >= max_chars_per_chapter:
-                chapters.append({
-                    "title": f"Chapter {chapter_num}",
-                    "text": current_chunk.strip()
-                })
+                chapters.append(
+                    {"title": f"Chapter {chapter_num}", "text": current_chunk.strip()}
+                )
                 chapter_num += 1
-                current_chunk = ''
+                current_chunk = ""
         if current_chunk:
-            chapters.append({
-                "title": f"Chapter {chapter_num}",
-                "text": current_chunk.strip()
-            })
+            chapters.append(
+                {"title": f"Chapter {chapter_num}", "text": current_chunk.strip()}
+            )
         return chapters
 
     def translate_chapter(
-        self, chapter_text: str, target_language: str, context_abstract: str = "", 
-        source_chapter=None, target_chapter=None, user=None
+        self,
+        chapter_text: str,
+        target_language: str,
+        context_abstract: str = "",
+        source_chapter=None,
+        target_chapter=None,
+        user=None,
     ) -> str:
         """
         Translate chapter text to target language with context
         """
-        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
-        
+        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(
+            target_language, target_language
+        )
+
         # Detect source language from chapter
         source_language = ""
         source_book = None
@@ -434,7 +575,7 @@ class LLMTranslationService:
             elif source_chapter.book and source_chapter.book.language:
                 source_language = source_chapter.book.language.code
             source_book = source_chapter.book
-        
+
         # Get target book from target chapter
         target_book = None
         if target_chapter:
@@ -457,33 +598,39 @@ class LLMTranslationService:
 
         try:
             messages = [
-                SystemMessage(content=f"You are a professional translator specializing in literary translation to {target_lang_name}."),
+                SystemMessage(
+                    content=f"You are a professional translator specializing in literary translation to {target_lang_name}."
+                ),
                 HumanMessage(content=prompt),
             ]
-            
+
             return self._call_llm(
-                messages, 
-                temperature=0.3, 
+                messages,
+                temperature=0.3,
                 max_tokens=4000,
-                operation='translation',
+                operation="translation",
                 source_book=source_book,
                 source_chapter=source_chapter,
                 target_book=target_book,
                 target_chapter=target_chapter,
                 source_lang=source_language,
                 target_lang=target_language,
-                user=user
+                user=user,
             )
 
         except Exception as e:
             logger.error(f"Error translating chapter: {str(e)}")
             return f"[Translation Error: {str(e)}]\n\nOriginal text:\n{chapter_text}"
 
-    def translate_text(self, text: str, target_language: str, user=None, source_language=None) -> str:
+    def translate_text(
+        self, text: str, target_language: str, user=None, source_language=None
+    ) -> str:
         """
         Translate a short text (e.g., title or key term) to the target language.
         """
-        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
+        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(
+            target_language, target_language
+        )
         prompt = f"""
         Please translate the following text to {target_lang_name}. Maintain the original meaning and style.
         Text to translate:
@@ -491,161 +638,48 @@ class LLMTranslationService:
         """
         try:
             messages = [
-                SystemMessage(content=f"You are a professional translator specializing in literary translation to {target_lang_name}."),
+                SystemMessage(
+                    content=f"You are a professional translator specializing in literary translation to {target_lang_name}."
+                ),
                 HumanMessage(content=prompt),
             ]
-            
+
             return self._call_llm(
-                messages, 
-                temperature=0.3, 
+                messages,
+                temperature=0.3,
                 max_tokens=256,
-                operation='translation',
+                operation="translation",
                 source_lang=source_language or "",
                 target_lang=target_language,
-                user=user
+                user=user,
             )
-            
+
         except Exception as e:
             logger.error(f"Error translating text: {str(e)}")
             return f"[Translation Error: {str(e)}] {text}"
 
-    def switch_provider(self, provider: str, api_key: str = None, model: str = None):
-        """
-        Switch to a different LLM provider
-        
-        Args:
-            provider: Provider name ('openai', 'anthropic', 'google', etc.)
-            api_key: API key for the new provider
-            model: Model name for the new provider
-        """
-        self.provider = provider
-        if api_key:
-            self.api_key = api_key
-        if model:
-            self.model = model
-        else:
-            self.model = self._get_default_model()
-        
-        # Reinitialize the LLM client
-        self.llm = self._initialize_llm()
-        logger.info(f"Switched to {provider} provider with model {self.model}")
-
-    def get_available_providers(self) -> List[str]:
-        """Get list of available LLM providers"""
-        available = []
-        if OPENAI_AVAILABLE:
-            available.append("openai")
-        if ANTHROPIC_AVAILABLE:
-            available.append("anthropic")
-        if GOOGLE_AVAILABLE:
-            available.append("google")
-        if COHERE_AVAILABLE:
-            available.append("cohere")
-        if OLLAMA_AVAILABLE:
-            available.append("ollama")
-        
-        # Add providers that don't require specific packages
-        available.extend(["mistral", "huggingface", "local"])
-        return available
-
-    def get_provider_models(self, provider: str = None) -> List[str]:
-        """Get available models for a provider"""
-        provider = provider or self.provider
-        
-        models = {
-            "openai": [
-                "gpt-4o",
-                "gpt-4o-mini", 
-                "gpt-4-turbo",
-                "gpt-3.5-turbo",
-                "gpt-4"
-            ],
-            "anthropic": [
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307"
-            ],
-            "google": [
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
-                "gemini-pro",
-                "gemini-pro-vision"
-            ],
-            "cohere": [
-                "command",
-                "command-light",
-                "command-nightly"
-            ],
-            "mistral": [
-                "mistral-large-latest",
-                "mistral-medium-latest",
-                "mistral-small-latest"
-            ],
-            "ollama": [
-                "llama2",
-                "llama2:13b",
-                "llama2:70b",
-                "mistral",
-                "codellama",
-                "neural-chat"
-            ]
-        }
-        
-        return models.get(provider, [])
-
-    def get_chain(self, prompt_template=None):
-        """
-        Get a LangChain chain for more advanced workflows
-        
-        Args:
-            prompt_template: Optional prompt template for the chain
-            
-        Returns:
-            LangChain chain instance
-        """
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_core.output_parsers import StrOutputParser
-        
-        if prompt_template is None:
-            prompt_template = ChatPromptTemplate.from_messages([
-                ("system", "You are a helpful assistant."),
-                ("user", "{input}")
-            ])
-        
-        chain = prompt_template | self.llm | StrOutputParser()
-        return chain
-
-    def get_memory_chain(self):
-        """
-        Get a LangChain chain with conversation memory
-        
-        Returns:
-            LangChain chain with memory
-        """
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.memory import ConversationBufferMemory
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful assistant."),
-            ("human", "{input}"),
-        ])
-        
-        memory = ConversationBufferMemory(return_messages=True, memory_key="chat_history")
-        
-        chain = prompt | self.llm | StrOutputParser()
-        return chain, memory
-
-    def generate_chapter_abstract(self, chapter_text: str, target_language: str = None, 
-                                 source_chapter=None, target_chapter=None, user=None) -> str:
+    def generate_chapter_abstract(
+        self,
+        chapter_text: str,
+        target_language: str = None,
+        source_chapter=None,
+        target_chapter=None,
+        user=None,
+    ) -> str:
         """
         Generate a summary/abstract of the chapter in the specified target language (default: original language)
         """
-        language_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language) if target_language else "the original language"
-        language_instruction = f" in {language_name}" if target_language else " in the original language of chapter text"
-        
+        language_name = (
+            self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
+            if target_language
+            else "the original language"
+        )
+        language_instruction = (
+            f" in {language_name}"
+            if target_language
+            else " in the original language of chapter text"
+        )
+
         # Detect source language from chapter
         source_language = ""
         source_book = None
@@ -655,12 +689,12 @@ class LLMTranslationService:
             elif source_chapter.book and source_chapter.book.language:
                 source_language = source_chapter.book.language.code
             source_book = source_chapter.book
-        
+
         # Get target book from target chapter
         target_book = None
         if target_chapter:
             target_book = target_chapter.book
-        
+
         prompt = f"""
         Please create a concise abstract (2-3 sentences){language_instruction} of the following chapter that will help maintain consistency in translation. 
         Focus on:
@@ -673,39 +707,51 @@ class LLMTranslationService:
         {chapter_text[:2000]}...
         """
         system_prompt = f"You are a helpful assistant that creates concise summaries for translation context. Always respond in {language_name}."
-        
+
         try:
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
             ]
-            
+
             return self._call_llm(
-                messages, 
-                temperature=0.3, 
+                messages,
+                temperature=0.3,
                 max_tokens=200,
-                operation='abstract_generation',
+                operation="abstract_generation",
                 source_book=source_book,
                 source_chapter=source_chapter,
                 target_book=target_book,
                 target_chapter=target_chapter,
                 source_lang=source_language,
                 target_lang=target_language or "",
-                user=user
+                user=user,
             )
 
         except Exception as e:
             logger.error(f"Error generating abstract: {str(e)}")
             return f"Chapter abstract (auto-generated excerpt): {chapter_text[:200]}..."
 
-    def extract_key_terms(self, chapter_text: str, target_language: str = None, 
-                         source_chapter=None, target_chapter=None, user=None) -> List[str]:
+    def extract_key_terms(
+        self,
+        chapter_text: str,
+        target_language: str = None,
+        source_chapter=None,
+        target_chapter=None,
+        user=None,
+    ) -> List[str]:
         """
         Extract key terms that should be consistently translated, in the specified target language (default: original language)
         """
-        language_name = self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language) if target_language else "the original language"
-        language_instruction = f" in {language_name}" if target_language else " in the original language"
-        
+        language_name = (
+            self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
+            if target_language
+            else "the original language"
+        )
+        language_instruction = (
+            f" in {language_name}" if target_language else " in the original language"
+        )
+
         # Detect source language from chapter
         source_language = ""
         source_book = None
@@ -715,12 +761,12 @@ class LLMTranslationService:
             elif source_chapter.book and source_chapter.book.language:
                 source_language = source_chapter.book.language.code
             source_book = source_chapter.book
-        
+
         # Get target book from target chapter
         target_book = None
         if target_chapter:
             target_book = target_chapter.book
-        
+
         prompt = f"""
         Please identify 5-10 key terms{language_instruction} from the following text that are important for consistent translation. 
         Focus on:
@@ -735,25 +781,25 @@ class LLMTranslationService:
         {chapter_text[:1500]}...
         """
         system_prompt = f"You are a helpful assistant that identifies key terms for translation consistency. Always respond in {language_name}."
-        
+
         try:
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt),
             ]
-            
+
             result = self._call_llm(
-                messages, 
-                temperature=0.2, 
+                messages,
+                temperature=0.2,
                 max_tokens=300,
-                operation='key_terms_extraction',
+                operation="key_terms_extraction",
                 source_book=source_book,
                 source_chapter=source_chapter,
                 target_book=target_book,
                 target_chapter=target_chapter,
                 source_lang=source_language,
                 target_lang=target_language or "",
-                user=user
+                user=user,
             )
 
             try:

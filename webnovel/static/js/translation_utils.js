@@ -4,8 +4,8 @@
 
 class TranslationManager {
     constructor() {
-        this.csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || 
-                        document.querySelector('meta[name=csrf-token]')?.content;
+        this.csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
+            document.querySelector('meta[name=csrf-token]')?.content;
     }
 
     /**
@@ -17,7 +17,7 @@ class TranslationManager {
      */
     initiateTranslation(chapterId, languageId, onSuccess = null, onError = null) {
         const url = `/books/chapters/${chapterId}/initiate-translation/${languageId}/`;
-        
+
         fetch(url, {
             method: 'POST',
             headers: {
@@ -25,24 +25,24 @@ class TranslationManager {
                 'X-CSRFToken': this.csrfToken
             }
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                console.log('Translation initiated:', data.message);
-                if (onSuccess) onSuccess(data);
-                this.showNotification(data.message, 'success');
-            } else {
-                console.error('Translation failed:', data.error);
-                if (onError) onError(data.error);
-                this.showNotification(data.error, 'error');
-            }
-        })
-        .catch(error => {
-            console.error('Network error:', error);
-            const errorMsg = 'Network error occurred while initiating translation.';
-            if (onError) onError(errorMsg);
-            this.showNotification(errorMsg, 'error');
-        });
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Translation initiated:', data.message);
+                    if (onSuccess) onSuccess(data);
+                    this.showNotification(data.message, 'success');
+                } else {
+                    console.error('Translation failed:', data.error);
+                    if (onError) onError(data.error);
+                    this.showNotification(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Network error:', error);
+                const errorMsg = 'Network error occurred while initiating translation.';
+                if (onError) onError(errorMsg);
+                this.showNotification(errorMsg, 'error');
+            });
     }
 
     /**
@@ -53,28 +53,28 @@ class TranslationManager {
      */
     checkTranslationStatus(chapterId, onSuccess = null, onError = null) {
         const url = `/books/chapters/${chapterId}/check-translation-status/`;
-        
+
         fetch(url, {
             method: 'GET',
             headers: {
                 'X-CSRFToken': this.csrfToken
             }
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                if (onSuccess) onSuccess(data);
-            } else {
-                if (onError) onError(data.error);
-                this.showNotification(data.error, 'error');
-            }
-        })
-        .catch(error => {
-            console.error('Network error:', error);
-            const errorMsg = 'Network error occurred while checking translation status.';
-            if (onError) onError(errorMsg);
-            this.showNotification(errorMsg, 'error');
-        });
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (onSuccess) onSuccess(data);
+                } else {
+                    if (onError) onError(data.error);
+                    this.showNotification(data.error, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Network error:', error);
+                const errorMsg = 'Network error occurred while checking translation status.';
+                if (onError) onError(errorMsg);
+                this.showNotification(errorMsg, 'error');
+            });
     }
 
     /**
@@ -89,12 +89,12 @@ class TranslationManager {
             this.checkTranslationStatus(chapterId, (data) => {
                 const hasTranslating = data.translations.some(t => t.is_translating);
                 const hasError = data.translations.some(t => t.has_error);
-                
+
                 if (hasError) {
                     if (onError) onError('Translation failed with errors');
                     return;
                 }
-                
+
                 if (hasTranslating) {
                     // Continue polling
                     setTimeout(poll, interval);
@@ -107,7 +107,7 @@ class TranslationManager {
                 if (onError) onError(error);
             });
         };
-        
+
         // Start polling
         poll();
     }
@@ -126,15 +126,15 @@ class TranslationManager {
         notification.style.right = '20px';
         notification.style.zIndex = '9999';
         notification.style.minWidth = '300px';
-        
+
         notification.innerHTML = `
             ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
-        
+
         // Add to page
         document.body.appendChild(notification);
-        
+
         // Auto-remove after 5 seconds
         setTimeout(() => {
             if (notification.parentNode) {
@@ -143,67 +143,9 @@ class TranslationManager {
         }, 5000);
     }
 
-    /**
-     * Create translation buttons for available languages
-     * @param {number} chapterId - The ID of the original chapter
-     * @param {Array} availableLanguages - Array of available language objects
-     * @param {string} containerSelector - CSS selector for the container
-     */
-    createTranslationButtons(chapterId, availableLanguages, containerSelector) {
-        const container = document.querySelector(containerSelector);
-        if (!container) return;
-
-        const buttonGroup = document.createElement('div');
-        buttonGroup.className = 'btn-group';
-        buttonGroup.setAttribute('role', 'group');
-
-        availableLanguages.forEach(language => {
-            const button = document.createElement('button');
-            button.className = 'btn btn-outline-primary btn-sm';
-            button.textContent = language.name;
-            button.title = `Start AI translation to ${language.name}`;
-            button.onclick = () => {
-                button.disabled = true;
-                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
-                
-                this.initiateTranslation(chapterId, language.id, (data) => {
-                    button.innerHTML = '<i class="fas fa-check"></i> Started';
-                    button.className = 'btn btn-success btn-sm';
-                    
-                    // Start polling for status updates
-                    this.pollTranslationStatus(chapterId, 3000, (statusData) => {
-                        button.innerHTML = '<i class="fas fa-check-double"></i> Complete';
-                        button.className = 'btn btn-success btn-sm';
-                        // Optionally reload the page or update the UI
-                        setTimeout(() => location.reload(), 1000);
-                    }, (error) => {
-                        button.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
-                        button.className = 'btn btn-danger btn-sm';
-                    });
-                }, (error) => {
-                    button.disabled = false;
-                    button.innerHTML = language.name;
-                    button.className = 'btn btn-outline-primary btn-sm';
-                });
-            };
-            
-            buttonGroup.appendChild(button);
-        });
-
-        container.appendChild(buttonGroup);
-    }
 }
 
 // Initialize translation manager when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     window.translationManager = new TranslationManager();
-    
-    // Auto-initialize translation buttons if data is available
-    if (window.chapterId && window.availableLanguages) {
-        translationManager.createTranslationButtons(
-            window.chapterId, 
-            window.availableLanguages, 
-            '#translation-buttons-container'
-        );
-    }
 }); 
