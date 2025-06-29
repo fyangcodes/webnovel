@@ -13,22 +13,27 @@
                 {% endfor %}
             {% endif %}
             
-            <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
-                <div class="container-fluid">
-                    <a class="navbar-brand" href="{% url 'books:book_list' %}">WebNovel</a>
-                    <div class="collapse navbar-collapse">
-                        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                            <li class="nav-item">
-                                <a class="nav-link" href="{% url 'books:book_list' %}">Books</a>
+            <nav aria-label="breadcrumb" class="mb-4">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item">
+                        <a href="{% url 'books:book_list' %}">
+                            <i class="fas fa-home"></i> Home
+                        </a>
+                    </li>
+                    {% if book %}
+                        <li class="breadcrumb-item">
+                            <a href="{% url 'books:book_detail' book.id %}">{{ book.title }}</a>
+                        </li>
+                    {% endif %}
+                    {% if chapter %}
+                        {% if chapter.book != book %}
+                            <li class="breadcrumb-item">
+                                <a href="{% url 'books:book_detail' chapter.book.id %}">{{ chapter.book.title }}</a>
                             </li>
-                            {% if book %}
-                            <li class="nav-item">
-                                <a class="nav-link" href="{% url 'books:book_detail' book.id %}">Book Detail</a>
-                            </li>
-                            {% endif %}
-                        </ul>
-                    </div>
-                </div>
+                        {% endif %}
+                        <li class="breadcrumb-item active" aria-current="page">{{ chapter.title }}</li>
+                    {% endif %}
+                </ol>
             </nav>
             
             {% block books_content %}{% endblock %}

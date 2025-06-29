@@ -40,13 +40,15 @@ urlpatterns = [
     path("chapters/<int:pk>/update/", ChapterUpdateView.as_view(), name="chapter_update"),
     path("chapters/<int:pk>/delete/", ChapterDeleteView.as_view(), name="chapter_delete"),
         
-    # Chapter additional views
-    path("chapters/<int:pk>/schedule/", ChapterScheduleView.as_view(), name="chapter_schedule"),
-    path("chapters/<int:pk>/publish/", ChapterPublishNowView.as_view(), name="chapter_publish_now"),
+    # Chapter translation views
     path("chapters/<int:pk>/analyze/", AnalyzeChapterView.as_view(), name="chapter_analyze"),
     path("chapters/<int:chapter_id>/translate/<int:language_id>/", ChapterCreateTranslationView.as_view(), name="chapter_create_translation"),
     path("chapters/<int:chapter_id>/initiate-translation/<int:language_id>/", InitiateChapterTranslationView.as_view(), name="chapter_initiate_translation"),
     path("chapters/<int:pk>/check-translation-status/", CheckTranslationStatusView.as_view(), name="chapter_check_translation_status"),
+    
+    # Chapter schedule and publish
+    path("chapters/<int:pk>/schedule/", ChapterScheduleView.as_view(), name="chapter_schedule"),
+    path("chapters/<int:pk>/publish/", ChapterPublishNowView.as_view(), name="chapter_publish_now"),
     
     # Batch processing views
     path("batch-analyze-chapters/", BatchAnalyzeChaptersView.as_view(), name="batch_analyze_chapters"),
