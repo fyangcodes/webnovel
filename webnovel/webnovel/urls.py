@@ -30,7 +30,7 @@ urlpatterns = [
     # App URLs
     path("", RedirectView.as_view(url="/books/", permanent=False)),
     path("books/", include("books.urls", namespace="books")),
-    path("llm/", include("llm_integration.urls", namespace="llm")),
+    path("llm/", include("llm_integration.urls", namespace="llm_integration")),
 ]
 
 # Serve media files in development

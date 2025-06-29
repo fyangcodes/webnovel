@@ -173,10 +173,47 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # LLM Integration Settings
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-3.5-turbo")
 LLM_MAX_TOKENS = 2000
 LLM_TEMPERATURE = 0.3
+
+# Provider-specific API keys (for easy switching)
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+
+# LLM Provider Configuration
+LLM_PROVIDERS = {
+    "openai": {
+        "api_key": OPENAI_API_KEY,
+        "default_model": "gpt-3.5-turbo",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "gpt-4"]
+    },
+    "anthropic": {
+        "api_key": ANTHROPIC_API_KEY,
+        "default_model": "claude-3-sonnet-20240229",
+        "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+    },
+    "google": {
+        "api_key": GOOGLE_API_KEY,
+        "default_model": "gemini-pro",
+        "models": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro", "gemini-pro-vision"]
+    },
+    "cohere": {
+        "api_key": COHERE_API_KEY,
+        "default_model": "command",
+        "models": ["command", "command-light", "command-nightly"]
+    },
+    "mistral": {
+        "api_key": MISTRAL_API_KEY,
+        "default_model": "mistral-large-latest",
+        "models": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"]
+    }
+}
 
 # Translation Settings
 SUPPORTED_LANGUAGES = ["en", "de"]

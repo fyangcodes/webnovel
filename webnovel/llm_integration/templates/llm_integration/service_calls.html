@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Service Calls{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>LLM Service Calls</h1>
+                <a href="{% url 'llm_integration:dashboard' %}" class="btn btn-outline-primary">Back to Dashboard</a>
+            </div>
+            
+            <!-- Filters -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-2">
+                            <label for="provider" class="form-label">Provider</label>
+                            <select name="provider" id="provider" class="form-select">
+                                <option value="">All Providers</option>
+                                {% for provider in providers %}
+                                <option value="{{ provider.id }}" {% if provider.id|stringformat:"s" == filters.provider_id %}selected{% endif %}>
+                                    {{ provider.display_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="operation" class="form-label">Operation</label>
+                            <select name="operation" id="operation" class="form-select">
+                                <option value="">All Operations</option>
+                                {% for value, label in operations %}
+                                <option value="{{ value }}" {% if value == filters.operation %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="status" class="form-label">Status</label>
+                            <select name="status" id="status" class="form-select">
+                                <option value="">All Statuses</option>
+                                {% for value, label in statuses %}
+                                <option value="{{ value }}" {% if value == filters.status %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="days" class="form-label">Period</label>
+                            <select name="days" id="days" class="form-select">
+                                <option value="1" {% if filters.days == 1 %}selected{% endif %}>Last Day</option>
+                                <option value="7" {% if filters.days == 7 %}selected{% endif %}>Last 7 Days</option>
+                                <option value="30" {% if filters.days == 30 %}selected{% endif %}>Last 30 Days</option>
+                                <option value="90" {% if filters.days == 90 %}selected{% endif %}>Last 90 Days</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">Filter</button>
+                            <a href="{% url 'llm_integration:service_calls' %}" class="btn btn-outline-secondary">Clear</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Service Calls Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Service Calls ({{ page_obj.paginator.count }} total)</h5>
+                </div>
+                <div class="card-body">
+                    {% if page_obj %}
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Provider</th>
+                                    <th>Model</th>
+                                    <th>Operation</th>
+                                    <th>Status</th>
+                                    <th>Response Time</th>
+                                    <th>Tokens</th>
+                                    <th>Cost</th>
+                                    <th>User</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for call in page_obj %}
+                                <tr>
+                                    <td>{{ call.created_at|date:"M d H:i:s" }}</td>
+                                    <td>{{ call.provider.display_name }}</td>
+                                    <td>{{ call.model_name }}</td>
+                                    <td>{{ call.get_operation_display }}</td>
+                                    <td>
+                                        <span class="badge {% if call.status == 'success' %}bg-success{% elif call.status == 'error' %}bg-danger{% elif call.status == 'timeout' %}bg-warning{% else %}bg-secondary{% endif %}">
+                                            {{ call.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>{{ call.response_time_ms|default:'-' }}ms</td>
+                                    <td>{{ call.total_tokens|default:'-' }}</td>
+                                    <td>
+                                        {% if call.estimated_cost %}
+                                        ${{ call.estimated_cost|floatformat:4 }}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ call.created_by.username|default:'-' }}</td>
+                                </tr>
+                                {% if call.error_message %}
+                                <tr class="table-danger">
+                                    <td colspan="9">
+                                        <strong>Error:</strong> {{ call.error_message }}
+                                    </td>
+                                </tr>
+                                {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    {% if page_obj.has_other_pages %}
+                    <nav aria-label="Service calls pagination">
+                        <ul class="pagination justify-content-center">
+                            {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Previous</a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}{% for key, value in filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+                            </li>
+                            {% endif %}
+                            {% endfor %}
+                            
+                            {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Next</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    
+                    {% else %}
+                    <p class="text-muted">No service calls found matching the current filters.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

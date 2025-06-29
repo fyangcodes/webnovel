@@ -73,13 +73,22 @@ def process_book_async(book_id):
 
 
 @shared_task
-def process_chapter_async(chapter_id):
+def process_chapter_async(chapter_id, user_id=None):
     """Process individual chapter - generate abstract and key terms only (no translation)"""
     try:
         chapter = Chapter.objects.get(id=chapter_id)
         # Remove processing_status as it's not in the new model
         # chapter.processing_status = "processing"
         chapter.save()
+
+        # Get user if provided
+        user = None
+        if user_id:
+            from django.contrib.auth import get_user_model
+            try:
+                user = get_user_model().objects.get(id=user_id)
+            except:
+                pass
 
         llm_service = LLMTranslationService()
 
@@ -90,7 +99,10 @@ def process_chapter_async(chapter_id):
             else None
         )
         abstract = llm_service.generate_chapter_abstract(
-            chapter.content, target_language=original_lang
+            chapter.content, 
+            target_language=original_lang,
+            chapter=chapter,
+            user=user
         )
         chapter.abstract = abstract
         # chapter.processing_status = "abstract_complete"
@@ -98,7 +110,10 @@ def process_chapter_async(chapter_id):
 
         # Generate key terms (in original language)
         key_terms = llm_service.extract_key_terms(
-            chapter.content, target_language=original_lang
+            chapter.content, 
+            target_language=original_lang,
+            chapter=chapter,
+            user=user
         )
         chapter.key_terms = key_terms
         # chapter.processing_status = "analyzed"
@@ -114,10 +129,20 @@ def process_chapter_async(chapter_id):
 
 
 @shared_task
-def generate_chapter_abstract_async(chapter_id):
+def generate_chapter_abstract_async(chapter_id, user_id=None):
     """Regenerate abstract for a specific chapter"""
     try:
         chapter = Chapter.objects.get(id=chapter_id)
+        
+        # Get user if provided
+        user = None
+        if user_id:
+            from django.contrib.auth import get_user_model
+            try:
+                user = get_user_model().objects.get(id=user_id)
+            except:
+                pass
+        
         llm_service = LLMTranslationService()
 
         abstract = llm_service.generate_chapter_abstract(
@@ -127,6 +152,8 @@ def generate_chapter_abstract_async(chapter_id):
                 if chapter.book.language
                 else None
             ),
+            chapter=chapter,
+            user=user
         )
         chapter.abstract = abstract
         chapter.save()
@@ -141,8 +168,7 @@ def generate_chapter_abstract_async(chapter_id):
 def bulk_translate_chapters_async(book_id, target_language_code, chapter_ids, user_id):
     """Bulk translate selected chapters to the target language asynchronously."""
     from books.models import Book, Chapter
-    from languages.models import Language
-    from translations.models import Translation
+
     from django.contrib.auth import get_user_model
     import json
     try:
@@ -161,21 +187,31 @@ def bulk_translate_chapters_async(book_id, target_language_code, chapter_ids, us
             if not exists:
                 # Translate title
                 translated_title = translation_service.translate_text(
-                    chapter.title, target_language.code
+                    chapter.title, 
+                    target_language.code,
+                    user=user
                 )
                 # Translate main text
                 translated_text = translation_service.translate_chapter(
-                    chapter.content, target_language.code
+                    chapter.content, 
+                    target_language.code,
+                    chapter=chapter,
+                    user=user
                 )
                 # Translate key terms (returns a list)
                 key_terms = translation_service.extract_key_terms(
-                    chapter.content, target_language.code
+                    chapter.content, 
+                    target_language.code,
+                    chapter=chapter,
+                    user=user
                 )
                 # Translate each key term and store as key-value pairs
                 key_term_pairs = {}
                 for term in key_terms:
                     translated_term = translation_service.translate_text(
-                        term, target_language.code
+                        term, 
+                        target_language.code,
+                        user=user
                     )
                     key_term_pairs[term] = translated_term
                 # Store key_term_pairs as JSON string if Translation model has a field for it
@@ -196,14 +232,24 @@ def bulk_translate_chapters_async(book_id, target_language_code, chapter_ids, us
 
 
 @shared_task
-def process_bookfile_async(bookfile_id):
+def process_bookfile_async(bookfile_id, user_id=None):
     book_file = BookFile.objects.get(id=bookfile_id)
     book = book_file.book
+    
+    # Get user if provided
+    user = None
+    if user_id:
+        from django.contrib.auth import get_user_model
+        try:
+            user = get_user_model().objects.get(id=user_id)
+        except:
+            pass
+    
     # 1. Extract text
     text = extract_text_from_file(book_file.file)
     # 2. Chunk into chapters (using your LLM or logic)
     llm_service = LLMTranslationService()
-    chapters_data = llm_service.divide_into_chapters(text)
+    chapters_data = llm_service.divide_into_chapters(text, book=book, user=user)
     # 3. Create Chapter objects
     for chapter_data in chapters_data:
         Chapter.objects.create(

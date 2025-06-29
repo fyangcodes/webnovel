@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Quality Control Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">LLM Quality Control Dashboard</h1>
+            
+            <!-- Period Selector -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="get" class="row align-items-center">
+                        <div class="col-md-3">
+                            <label for="days" class="form-label">Analysis Period:</label>
+                            <select name="days" id="days" class="form-select" onchange="this.form.submit()">
+                                {% for days in period_options %}
+                                <option value="{{ days }}" {% if days == selected_days %}selected{% endif %}>
+                                    Last {{ days }} day{{ days|pluralize }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Overall Statistics -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Total Calls</h5>
+                            <h2 class="text-primary">{{ report.total_calls|default:0 }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Total Cost</h5>
+                            <h2 class="text-success">${{ report.total_cost|default:0|floatformat:4 }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Active Providers</h5>
+                            <h2 class="text-info">{{ providers.count }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Recent Errors</h5>
+                            <h2 class="text-danger">{{ report.recent_errors|length }}</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Provider Performance -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Provider Performance</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if report.provider_summary %}
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Provider</th>
+                                            <th>Calls</th>
+                                            <th>Success Rate</th>
+                                            <th>Avg Response Time</th>
+                                            <th>Total Cost</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for provider_name, data in report.provider_summary.items %}
+                                        <tr>
+                                            <td>{{ data.display_name }}</td>
+                                            <td>{{ data.total_calls|default:0 }}</td>
+                                            <td>
+                                                <div class="progress" style="height: 20px;">
+                                                    <div class="progress-bar {% if data.success_rate >= 0.9 %}bg-success{% elif data.success_rate >= 0.7 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                                         style="width: {{ data.success_rate|default:0|multiply:100 }}%">
+                                                        {{ data.success_rate|default:0|multiply:100|floatformat:1 }}%
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>{{ data.avg_response_time_ms|default:0|floatformat:0 }}ms</td>
+                                            <td>${{ data.total_cost|default:0|floatformat:4 }}</td>
+                                            <td>
+                                                {% if data.api_key_configured %}
+                                                <span class="badge bg-success">Configured</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">Not Configured</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted">No provider data available for this period.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Service Calls -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Recent Service Calls</h5>
+                            <a href="{% url 'llm_integration:service_calls' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                        </div>
+                        <div class="card-body">
+                            {% if recent_calls %}
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Provider</th>
+                                            <th>Operation</th>
+                                            <th>Status</th>
+                                            <th>Response Time</th>
+                                            <th>Tokens</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for call in recent_calls %}
+                                        <tr>
+                                            <td>{{ call.created_at|date:"M d H:i" }}</td>
+                                            <td>{{ call.provider.display_name }}</td>
+                                            <td>{{ call.get_operation_display }}</td>
+                                            <td>
+                                                <span class="badge {% if call.status == 'success' %}bg-success{% elif call.status == 'error' %}bg-danger{% elif call.status == 'timeout' %}bg-warning{% else %}bg-secondary{% endif %}">
+                                                    {{ call.get_status_display }}
+                                                </span>
+                                            </td>
+                                            <td>{{ call.response_time_ms|default:'-' }}ms</td>
+                                            <td>{{ call.total_tokens|default:'-' }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted">No recent service calls found.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Errors -->
+            {% if report.recent_errors %}
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">Recent Errors</h5>
+                        </div>
+                        <div class="card-body">
+                            {% for error in report.recent_errors %}
+                            <div class="alert alert-danger mb-2">
+                                <strong>{{ error.created_at|date:"M d H:i" }} - {{ error.provider }} ({{ error.model }})</strong><br>
+                                <strong>Operation:</strong> {{ error.operation }} | <strong>Status:</strong> {{ error.status }}<br>
+                                <strong>Error:</strong> {{ error.error_message }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %} 

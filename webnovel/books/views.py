@@ -337,22 +337,19 @@ class AnalyzeChapterView(LoginRequiredMixin, View):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class BatchAnalyzeChaptersView(LoginRequiredMixin, View):
-    """View for batch analyzing chapters with LLM to generate abstracts and key terms."""
+    """View for batch analyzing multiple chapters"""
     
     def post(self, request, *args, **kwargs):
         try:
             data = json.loads(request.body)
             chapter_ids = data.get('chapter_ids', [])
-            book_id = data.get('book_id')
             
             if not chapter_ids:
-                return JsonResponse({'success': False, 'error': 'No chapters selected'})
+                return JsonResponse({'success': False, 'error': 'No chapter IDs provided'})
             
-            # Get chapters that belong to the user
             chapters = Chapter.objects.filter(
                 id__in=chapter_ids,
-                book__owner=request.user,
-                book_id=book_id
+                book__owner=request.user
             )
             
             if not chapters.exists():
@@ -366,9 +363,17 @@ class BatchAnalyzeChaptersView(LoginRequiredMixin, View):
                     from llm_integration.services import LLMTranslationService
                     llm_service = LLMTranslationService()
                     
-                    # Generate abstract and key terms
-                    abstract = llm_service.generate_chapter_abstract(chapter.content)
-                    key_terms = llm_service.extract_key_terms(chapter.content)
+                    # Generate abstract and key terms with user tracking
+                    abstract = llm_service.generate_chapter_abstract(
+                        chapter.content,
+                        chapter=chapter,
+                        user=request.user
+                    )
+                    key_terms = llm_service.extract_key_terms(
+                        chapter.content,
+                        chapter=chapter,
+                        user=request.user
+                    )
                     
                     # Update chapter
                     chapter.abstract = abstract
