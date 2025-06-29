@@ -32,6 +32,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-development-secret-
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
 
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",")
+CSRF_TRUSTED_ORIGINS = [
+    "https://webnovel-1uqz.onrender.com",  # your deployed frontend/backend domain
+]
 
 
 # Application definition
