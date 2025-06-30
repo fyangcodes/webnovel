@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Profile - {{ user.display_name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <!-- Profile Header -->
+        <div class="col-12">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-3 text-center">
+                            {% if user.avatar %}
+                                <img src="{{ user.avatar.url }}" alt="{{ user.display_name }}" 
+                                     class="rounded-circle img-fluid" style="max-width: 150px;">
+                            {% elif user.avatar_thumbnail %}
+                                <img src="{{ user.avatar_thumbnail.url }}" alt="{{ user.display_name }}" 
+                                     class="rounded-circle img-fluid" style="max-width: 150px;">
+                            {% else %}
+                                <img src="{% static 'images/default-avatar.png' %}" alt="Default Avatar" 
+                                     class="rounded-circle img-fluid" style="max-width: 150px;">
+                            {% endif %}
+                        </div>
+                        <div class="col-md-9">
+                            <h2 class="card-title">{{ user.display_name }}</h2>
+                            <p class="text-muted">
+                                <i class="fas fa-user-tag"></i> {{ user.get_role_display_name }}
+                                {% if user.is_verified %}
+                                    <span class="badge bg-success ms-2">
+                                        <i class="fas fa-check-circle"></i> Verified
+                                    </span>
+                                {% endif %}
+                            </p>
+                            {% if user.bio %}
+                                <p class="card-text">{{ user.bio }}</p>
+                            {% endif %}
+                            <div class="d-flex gap-2">
+                                <a href="{% url 'accounts:profile_edit' %}" class="btn btn-primary">
+                                    <i class="fas fa-edit"></i> Edit Profile
+                                </a>
+                                {% if user.is_author %}
+                                    <span class="badge bg-info">
+                                        <i class="fas fa-pen"></i> Author
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Stats -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <h4 class="text-primary">{{ books.count }}</h4>
+                            <small class="text-muted">Books</small>
+                        </div>
+                        <div class="col-6">
+                            <h4 class="text-success">{{ translation_assignments.count }}</h4>
+                            <small class="text-muted">Translations</small>
+                        </div>
+                    </div>
+                    <div class="row text-center mt-3">
+                        <div class="col-6">
+                            <h4 class="text-info">{{ collaborations.count }}</h4>
+                            <small class="text-muted">Collaborations</small>
+                        </div>
+                        <div class="col-6">
+                            <h4 class="text-warning">{{ user.date_joined|date:"M Y" }}</h4>
+                            <small class="text-muted">Member Since</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Permissions -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-shield-alt"></i> Permissions</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        {% for permission, has_perm in permissions.items %}
+                            <li class="mb-2">
+                                {% if has_perm %}
+                                    <i class="fas fa-check text-success"></i>
+                                {% else %}
+                                    <i class="fas fa-times text-muted"></i>
+                                {% endif %}
+                                {{ permission|title|cut:"_"|cut:"can" }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-bolt"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        {% if user.is_writer %}
+                            <a href="{% url 'books:book_create' %}" class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus"></i> Create Book
+                            </a>
+                        {% endif %}
+                        {% if user.is_translator %}
+                            <a href="{% url 'accounts:translation_assignments' %}" class="btn btn-success btn-sm">
+                                <i class="fas fa-language"></i> View Translations
+                            </a>
+                        {% endif %}
+                        {% if user.is_editor %}
+                            <a href="{% url 'accounts:user_list' %}" class="btn btn-info btn-sm">
+                                <i class="fas fa-users"></i> Manage Users
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Books -->
+        {% if books %}
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-book"></i> My Books</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for book in books|slice:":6" %}
+                        <div class="col-md-4 mb-3">
+                            <div class="card h-100">
+                                {% if book.cover_image %}
+                                    <img src="{{ book.cover_image.url }}" class="card-img-top" alt="{{ book.title }}" style="height: 200px; object-fit: cover;">
+                                {% endif %}
+                                <div class="card-body">
+                                    <h6 class="card-title">{{ book.title }}</h6>
+                                    <p class="card-text small text-muted">
+                                        {{ book.status|title }} • {{ book.total_chapters }} chapters
+                                    </p>
+                                    <a href="{% url 'books:book_detail' book.id %}" class="btn btn-outline-primary btn-sm">
+                                        View Book
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if books.count > 6 %}
+                        <div class="text-center mt-3">
+                            <a href="{% url 'books:book_list' %}" class="btn btn-outline-secondary">
+                                View All Books
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Recent Translation Assignments -->
+        {% if translation_assignments %}
+        <div class="col-12 mt-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-language"></i> Recent Translation Assignments</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Chapter</th>
+                                    <th>Target Language</th>
+                                    <th>Status</th>
+                                    <th>Due Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for assignment in translation_assignments|slice:":5" %}
+                                <tr>
+                                    <td>{{ assignment.chapter.title }}</td>
+                                    <td>{{ assignment.target_language.name }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ assignment.status|yesno:'success,warning,info,secondary' }}">
+                                            {{ assignment.status|title }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if assignment.due_date %}
+                                            {% if assignment.is_overdue %}
+                                                <span class="text-danger">{{ assignment.due_date|date:"M d, Y" }}</span>
+                                            {% else %}
+                                                {{ assignment.due_date|date:"M d, Y" }}
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">No due date</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'accounts:translation_assignment_detail' assignment.id %}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            View
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if translation_assignments.count > 5 %}
+                        <div class="text-center mt-3">
+                            <a href="{% url 'accounts:translation_assignments' %}" class="btn btn-outline-secondary">
+                                View All Assignments
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %} 

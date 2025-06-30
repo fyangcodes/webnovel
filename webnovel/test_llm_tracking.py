@@ -13,10 +13,12 @@ from django.conf import settings
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'webnovel.settings')
 django.setup()
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from llm_integration.models import LLMProvider, LLMServiceCall, LLMQualityMetrics
 from llm_integration.services import LLMTranslationService
 from books.models import Book, Chapter
+
+User = get_user_model()
 
 def test_llm_tracking():
     """Test LLM tracking functionality"""

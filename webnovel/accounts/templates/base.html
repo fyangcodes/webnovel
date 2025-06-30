@@ -32,9 +32,30 @@
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" 
                            data-bs-toggle="dropdown">
-                            <i class="fas fa-user"></i> {{ user.username }}
+                            <i class="fas fa-user"></i> {{ user.display_name }}
+                            <small class="text-light">({{ user.get_role_display_name }})</small>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'accounts:profile' %}">
+                                    <i class="fas fa-user-circle"></i> Profile
+                                </a>
+                            </li>
+                            {% if user.is_translator %}
+                            <li>
+                                <a class="dropdown-item" href="{% url 'accounts:translation_assignments' %}">
+                                    <i class="fas fa-language"></i> My Translations
+                                </a>
+                            </li>
+                            {% endif %}
+                            {% if user.is_editor %}
+                            <li>
+                                <a class="dropdown-item" href="{% url 'accounts:user_list' %}">
+                                    <i class="fas fa-users"></i> Manage Users
+                                </a>
+                            </li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
                             <li>
                                 <a class="dropdown-item" href="{% url 'logout' %}">
                                     <i class="fas fa-sign-out-alt"></i> Logout

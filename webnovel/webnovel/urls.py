@@ -26,6 +26,7 @@ urlpatterns = [
 
     # Authentication
     path("accounts/", include("django.contrib.auth.urls")),
+    path("accounts/", include("accounts.urls", namespace="accounts")),
 
     # App URLs
     path("", RedirectView.as_view(url="/books/", permanent=False)),

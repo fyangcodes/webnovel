@@ -52,7 +52,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "crispy_forms",
     "crispy_bootstrap5",
+    "imagekit",
     # Local apps
+    "accounts.apps.AccountsConfig",
     "books.apps.BooksConfig",
     "llm_integration.apps.LlmIntegrationConfig",
 ]
@@ -272,3 +274,6 @@ LOGGING = {
         },
     },
 }
+
+# Custom User Model
+AUTH_USER_MODEL = 'accounts.User'

@@ -4,7 +4,6 @@ from django.contrib.contenttypes.models import ContentType
 from books.models import Book, Chapter, Language, ChangeLog
 from books.views import ChapterVersionCompareView
 from django.test import RequestFactory
-from django.contrib.auth.models import User
 
 User = get_user_model()
 
