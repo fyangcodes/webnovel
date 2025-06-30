@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Changelog - {{ chapter.title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'books:book_detail' chapter.book.pk %}">{{ chapter.book.title }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'books:chapter_detail' chapter.pk %}">{{ chapter.title }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Changelog</li>
+                </ol>
+            </nav>
+
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Changelog for "{{ chapter.title }}"</h1>
+                <a href="{% url 'books:chapter_detail' chapter.pk %}" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Back to Chapter
+                </a>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-history"></i> Translation & Edit History
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="changelog-container">
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading changelog...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadChangelog();
+});
+
+function loadChangelog() {
+    console.log('Loading changelog for chapter:', {{ chapter.id }});
+    
+    fetch(`{% url 'books:chapter_changelog' chapter.pk %}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Changelog data:', data);
+        // Store response for debugging
+        window.lastChangelogResponse = data;
+        
+        if (data.success) {
+            displayChangelog(data.changelog_entries);
+            if (data.debug_info) {
+                console.log('Debug info:', data.debug_info);
+            }
+        } else {
+            displayError(data.error || 'Failed to load changelog');
+            if (data.debug_info) {
+                console.log('Error debug info:', data.debug_info);
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error loading changelog:', error);
+        displayError('Failed to load changelog: ' + error.message);
+    });
+}
+
+function displayChangelog(entries) {
+    const container = document.getElementById('changelog-container');
+    
+    if (entries.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-info-circle fa-3x mb-3"></i>
+                <h5>No changelog entries found</h5>
+                <p>This chapter has no translation or edit history yet.</p>
+                <div class="mt-3">
+                    <button class="btn btn-outline-info btn-sm" onclick="showDebugInfo()">
+                        <i class="fas fa-bug"></i> Show Debug Info
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="timeline">';
+    
+    entries.forEach(entry => {
+        const statusClass = getStatusClass(entry.status);
+        const changeTypeIcon = getChangeTypeIcon(entry.change_type);
+        
+        html += `
+            <div class="timeline-item">
+                <div class="timeline-marker ${statusClass}">
+                    <i class="${changeTypeIcon}"></i>
+                </div>
+                <div class="timeline-content">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h6 class="mb-1">${entry.change_type}</h6>
+                        <span class="badge ${statusClass}">${entry.status}</span>
+                    </div>
+                    <p class="text-muted mb-2">
+                        <small>
+                            <i class="fas fa-user"></i> ${entry.user} | 
+                            <i class="fas fa-clock"></i> ${entry.created_at}
+                            ${entry.version > 1 ? ` | <i class="fas fa-code-branch"></i> v${entry.version}` : ''}
+                        </small>
+                    </p>
+                    <p class="mb-2">${entry.notes}</p>
+                    ${buildDiffHtml(entry)}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function buildDiffHtml(entry) {
+    if (!entry.diff_info || !entry.diff_info.has_diff) {
+        return '';
+    }
+    
+    return '<div class="diff-section mt-3">' +
+           '<button class="btn btn-outline-primary btn-sm" onclick="toggleDiff(' + entry.id + ')">' +
+           '<i class="fas fa-edit"></i> Show Edit Diff' +
+           '</button>' +
+           '<div id="diff-' + entry.id + '" class="diff-content mt-2" style="display: none;">' +
+           '<div class="card">' +
+           '<div class="card-header">' +
+           '<small class="text-muted">' +
+           '<i class="fas fa-edit"></i> Manual Edit - ' + (entry.diff_info.edit_type || 'correction') +
+           '</small>' +
+           '</div>' +
+           '<div class="card-body">' +
+           '<pre class="diff-code">' + (enhanceDiffDisplay(entry.diff_info.diff_content) || 'No changes detected') + '</pre>' +
+           '</div>' +
+           '</div>' +
+           '</div>' +
+           '</div>';
+}
+
+function showDebugInfo() {
+    // This will be populated by the AJAX response
+    if (window.lastChangelogResponse && window.lastChangelogResponse.debug_info) {
+        const debugInfo = window.lastChangelogResponse.debug_info;
+        const container = document.getElementById('changelog-container');
+        
+        let debugHtml = '<div class="alert alert-info">';
+        debugHtml += '<h6><i class="fas fa-bug"></i> Debug Information</h6>';
+        debugHtml += '<ul class="list-unstyled mb-0">';
+        for (const [key, value] of Object.entries(debugInfo)) {
+            debugHtml += `<li><strong>${key}:</strong> ${value}</li>`;
+        }
+        debugHtml += '</ul></div>';
+        
+        container.innerHTML = debugHtml;
+    }
+}
+
+function displayError(message) {
+    const container = document.getElementById('changelog-container');
+    container.innerHTML = `
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Error:</strong> ${message}
+        </div>
+    `;
+}
+
+function getStatusClass(status) {
+    switch (status) {
+        case 'completed':
+            return 'bg-success';
+        case 'in_progress':
+            return 'bg-warning';
+        case 'failed':
+            return 'bg-danger';
+        default:
+            return 'bg-secondary';
+    }
+}
+
+function getChangeTypeIcon(changeType) {
+    switch (changeType) {
+        case 'Translation':
+            return 'fas fa-language';
+        case 'Edit/Correction':
+            return 'fas fa-edit';
+        default:
+            return 'fas fa-cog';
+    }
+}
+
+function toggleDiff(entryId) {
+    const diffContent = document.getElementById(`diff-${entryId}`);
+    const button = diffContent.previousElementSibling;
+    
+    if (diffContent.style.display === 'none') {
+        diffContent.style.display = 'block';
+        button.innerHTML = '<i class="fas fa-eye-slash"></i> Hide Edit Diff';
+        button.classList.remove('btn-outline-primary');
+        button.classList.add('btn-outline-secondary');
+    } else {
+        diffContent.style.display = 'none';
+        button.innerHTML = '<i class="fas fa-edit"></i> Show Edit Diff';
+        button.classList.remove('btn-outline-secondary');
+        button.classList.add('btn-outline-primary');
+    }
+}
+
+function showDiffTab(entryId, tabName) {
+    // Hide all tab contents for this entry
+    const tabContents = document.querySelectorAll(`[id^="diff-${tabName}-${entryId}"]`);
+    tabContents.forEach(content => content.style.display = 'none');
+    
+    // Show the selected tab content
+    const selectedContent = document.getElementById(`diff-${tabName}-${entryId}`);
+    if (selectedContent) {
+        selectedContent.style.display = 'block';
+    }
+    
+    // Update tab button states
+    const tabButtons = document.querySelectorAll(`[onclick*="showDiffTab(${entryId}, '${tabName}')"]`);
+    tabButtons.forEach(btn => {
+        btn.classList.remove('active', 'btn-outline-secondary');
+        btn.classList.add('btn-outline-secondary');
+    });
+    
+    // Activate the clicked button
+    event.target.classList.remove('btn-outline-secondary');
+    event.target.classList.add('active');
+}
+
+function enhanceDiffDisplay(diffText) {
+    if (!diffText) return 'No changes';
+    
+    // Split into lines and process each line
+    const lines = diffText.split('\n');
+    const enhancedLines = lines.map(line => {
+        if (line.startsWith('+')) {
+            return `<span class="diff-added">${escapeHtml(line)}</span>`;
+        } else if (line.startsWith('-')) {
+            return `<span class="diff-removed">${escapeHtml(line)}</span>`;
+        } else if (line.startsWith('@')) {
+            return `<span class="diff-context">${escapeHtml(line)}</span>`;
+        } else {
+            return escapeHtml(line);
+        }
+    });
+    
+    return enhancedLines.join('\n');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+
+<style>
+.timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e9ecef;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 2rem;
+}
+
+.timeline-marker {
+    position: absolute;
+    left: -22px;
+    top: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+}
+
+.timeline-content {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.375rem;
+    border-left: 4px solid #dee2e6;
+}
+
+.timeline-content:hover {
+    background: #e9ecef;
+    transition: background-color 0.2s;
+}
+
+.diff-code {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.diff-tabs {
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 1rem;
+}
+
+.diff-tabs .btn {
+    border-radius: 0.375rem 0.375rem 0 0;
+    margin-right: 0.25rem;
+}
+
+.diff-tabs .btn.active {
+    background-color: #007bff;
+    border-color: #007bff;
+    color: white;
+}
+
+.diff-tab-content {
+    min-height: 100px;
+}
+
+.diff-section {
+    border-top: 1px solid #dee2e6;
+    padding-top: 1rem;
+}
+
+/* Diff syntax highlighting */
+.diff-code .diff-added {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.diff-code .diff-removed {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.diff-code .diff-context {
+    background-color: #f8f9fa;
+    color: #6c757d;
+}
+</style>
+{% endblock %} 

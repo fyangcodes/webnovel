@@ -69,6 +69,9 @@
             <a href="{% url 'books:chapter_update' chapter.pk %}" class="btn btn-outline-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
+            <a href="{% url 'books:chapter_changelog' chapter.pk %}" class="btn btn-outline-info">
+                <i class="fas fa-history"></i> Changelog
+            </a>
             <a href="{% url 'books:chapter_delete' chapter.pk %}" class="btn btn-outline-danger">
                 <i class="fas fa-trash"></i> Delete
             </a>

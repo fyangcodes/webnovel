@@ -1,6 +1,7 @@
 from celery import shared_task
 from django.utils import timezone
-from .models import Book, Chapter, BookFile, Language
+from django.contrib.contenttypes.models import ContentType
+from .models import Chapter, BookFile, Language, ChangeLog
 from .utils import extract_text_from_file
 from llm_integration.services import LLMTranslationService
 import logging
@@ -116,6 +117,24 @@ def translate_chapter_async(chapter_id, target_language_code):
         chapter.status = "draft"  # Set back to draft for review
         chapter.save()
 
+        # Update changelog to mark translation as completed
+        try:
+            content_type = ContentType.objects.get_for_model(Chapter)
+            changelog_entry = ChangeLog.objects.filter(
+                content_type=content_type,
+                original_object_id=original_chapter.id,
+                changed_object_id=chapter.id,
+                change_type="translation",
+                status="in_progress"
+            ).first()
+            
+            if changelog_entry:
+                changelog_entry.status = "completed"
+                changelog_entry.notes = f"AI translation completed successfully from {original_chapter.get_effective_language().name if original_chapter.get_effective_language() else 'Unknown'} to {target_language.name}. Translated title: '{translated_title}'"
+                changelog_entry.save()
+        except Exception as e:
+            logger.warning(f"Failed to update changelog for chapter {chapter_id}: {str(e)}")
+
         logger.info(
             f"Successfully completed translation for chapter {chapter_id} to {target_language_code}"
         )
@@ -140,6 +159,23 @@ def translate_chapter_async(chapter_id, target_language_code):
             chapter = Chapter.objects.get(id=chapter_id)
             chapter.status = "error"
             chapter.save()
+            
+            # Update changelog to mark translation as failed
+            try:
+                content_type = ContentType.objects.get_for_model(Chapter)
+                changelog_entry = ChangeLog.objects.filter(
+                    content_type=content_type,
+                    changed_object_id=chapter_id,
+                    change_type="translation",
+                    status="in_progress"
+                ).first()
+                
+                if changelog_entry:
+                    changelog_entry.status = "failed"
+                    changelog_entry.notes = f"AI translation failed: {str(e)}"
+                    changelog_entry.save()
+            except Exception as changelog_error:
+                logger.warning(f"Failed to update changelog for failed translation {chapter_id}: {str(changelog_error)}")
         except:
             pass
 

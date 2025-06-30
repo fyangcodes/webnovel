@@ -14,10 +14,12 @@ from .views import (
     ChapterDeleteView,
     ChapterScheduleView,
     ChapterPublishNowView,
-    InitiateChapterTranslationView,
+    ChapterTranslationView,
     CheckTranslationStatusView,
     AnalyzeChapterView,
     BatchAnalyzeChaptersView,
+    ChapterChangelogView,
+    ChapterDiffView,
 )
 
 app_name = "books"
@@ -41,8 +43,10 @@ urlpatterns = [
         
     # Chapter translation views
     path("chapters/<int:pk>/analyze/", AnalyzeChapterView.as_view(), name="chapter_analyze"),
-    path("chapters/<int:chapter_id>/initiate-translation/<int:language_id>/", InitiateChapterTranslationView.as_view(), name="chapter_initiate_translation"),
+    path("chapters/<int:chapter_id>/initiate-translation/<int:language_id>/", ChapterTranslationView.as_view(), name="chapter_initiate_translation"),
     path("chapters/<int:pk>/check-translation-status/", CheckTranslationStatusView.as_view(), name="chapter_check_translation_status"),
+    path("chapters/<int:pk>/changelog/", ChapterChangelogView.as_view(), name="chapter_changelog"),
+    path("chapters/diff/", ChapterDiffView.as_view(), name="chapter_diff"),
     
     # Chapter schedule and publish
     path("chapters/<int:pk>/schedule/", ChapterScheduleView.as_view(), name="chapter_schedule"),
