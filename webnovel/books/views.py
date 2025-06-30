@@ -140,13 +140,13 @@ class ChapterCreateView(LoginRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["book"] = get_object_or_404(
-            Book, pk=self.kwargs["book_id"], owner=self.request.user
+            Book, pk=self.kwargs["pk"], owner=self.request.user
         )
         return context
 
     def form_valid(self, form):
         book = get_object_or_404(
-            Book, pk=self.kwargs["book_id"], owner=self.request.user
+            Book, pk=self.kwargs["pk"], owner=self.request.user
         )
         form.instance.book = book
         response = super().form_valid(form)
@@ -156,7 +156,7 @@ class ChapterCreateView(LoginRequiredMixin, CreateView):
         return response
 
     def get_success_url(self):
-        return reverse_lazy("books:book_detail", kwargs={"pk": self.kwargs["book_id"]})
+        return reverse_lazy("books:book_detail", kwargs={"pk": self.kwargs["pk"]})
 
 
 class ChapterDetailView(LoginRequiredMixin, DetailView):
@@ -426,14 +426,14 @@ class BookCreateTranslationView(LoginRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["original_book"] = get_object_or_404(
-            Book, pk=self.kwargs["book_id"], owner=self.request.user
+            Book, pk=self.kwargs["pk"], owner=self.request.user
         )
         context["is_translation"] = True
         return context
 
     def form_valid(self, form):
         original_book = get_object_or_404(
-            Book, pk=self.kwargs["book_id"], owner=self.request.user
+            Book, pk=self.kwargs["pk"], owner=self.request.user
         )
         form.instance.owner = self.request.user
         form.instance.original_book = original_book
@@ -456,126 +456,6 @@ class BookCreateTranslationView(LoginRequiredMixin, CreateView):
 
     def get_success_url(self):
         return reverse_lazy("books:book_detail", kwargs={"pk": self.object.pk})
-
-
-class ChapterCreateTranslationView(LoginRequiredMixin, CreateView):
-    """View for creating a new chapter as a translation of an existing chapter"""
-
-    model = Chapter
-    form_class = ChapterForm
-    template_name = "books/chapter/form.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["original_chapter"] = get_object_or_404(
-            Chapter, pk=self.kwargs["chapter_id"], book__owner=self.request.user
-        )
-        context["is_translation"] = True
-
-        # Get target language from URL parameter
-        target_language_id = self.kwargs.get("language_id")
-        if target_language_id:
-            context["target_language"] = get_object_or_404(
-                Language, id=target_language_id
-            )
-
-        return context
-
-    def form_valid(self, form):
-        original_chapter = get_object_or_404(
-            Chapter, pk=self.kwargs["chapter_id"], book__owner=self.request.user
-        )
-
-        # Get target language
-        target_language_id = self.kwargs.get("language_id")
-        if not target_language_id:
-            messages.error(self.request, "Target language is required for translation.")
-            return self.form_invalid(form)
-
-        target_language = get_object_or_404(Language, id=target_language_id)
-
-        # Validate that target language is different from original
-        if original_chapter.get_effective_language() == target_language:
-            messages.error(
-                self.request,
-                "Target language must be different from the original chapter's language.",
-            )
-            return self.form_invalid(form)
-
-        # Find or create the translated book
-        translated_book = self._get_or_create_translated_book(
-            original_chapter, target_language
-        )
-
-        # Create the translated chapter with minimal info
-        # The actual content will be filled by the AI translation task
-        form.instance.book = translated_book
-        form.instance.original_chapter = original_chapter
-        form.instance.language = target_language
-        form.instance.chapter_number = original_chapter.chapter_number
-        form.instance.status = (
-            "translating"  # Set status to indicate translation is in progress
-        )
-
-        # Set a minimal placeholder title that will be updated by the translation task
-        if not form.instance.title:
-            form.instance.title = (
-                original_chapter.title
-            )  # Use original title as placeholder
-
-        # Set minimal content placeholder
-        if not form.instance.content:
-            form.instance.content = f"Translation in progress...\n\nOriginal chapter: {original_chapter.title}\nTarget language: {target_language.name}"
-
-        response = super().form_valid(form)
-
-        # Start the AI translation task
-        try:
-            task = translate_chapter_async.delay(self.object.id, target_language.code)
-
-            messages.success(
-                self.request,
-                f"Translation started! The AI is now translating '{original_chapter.title}' to {target_language.name}. "
-                f"You'll be notified when the translation is complete. Task ID: {task.id}",
-            )
-        except Exception as e:
-            # If task creation fails, update chapter status and show error
-            self.object.status = "error"
-            self.object.save()
-            messages.error(
-                self.request,
-                f"Failed to start translation task: {str(e)}. Please try again.",
-            )
-
-        return response
-
-    def _get_or_create_translated_book(self, original_chapter, target_language):
-        """Helper method to find or create a translated book"""
-        original_book = original_chapter.book
-
-        # First, try to find existing translated book in the target language
-        if original_book.has_translations:
-            translated_book = original_book.get_translation(target_language)
-            if translated_book:
-                return translated_book
-
-        # Create a new translated book if it doesn't exist
-        translated_book = Book.objects.create(
-            title=f"{original_book.title} ({target_language.name})",
-            language=target_language,
-            original_book=original_book,
-            owner=self.request.user,
-            status="draft",
-            description=f"Translation of '{original_book.title}' to {target_language.name}",
-        )
-
-        return translated_book
-
-    def get_success_url(self):
-        # Redirect back to the original chapter to show translation status
-        return reverse_lazy(
-            "books:chapter_detail", kwargs={"pk": self.kwargs["chapter_id"]}
-        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
