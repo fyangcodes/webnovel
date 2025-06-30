@@ -20,6 +20,7 @@ from .views import (
     BatchAnalyzeChaptersView,
     ChapterChangelogView,
     ChapterDiffView,
+    ChapterVersionCompareView,
 )
 
 app_name = "books"
@@ -46,6 +47,7 @@ urlpatterns = [
     path("chapters/<int:chapter_id>/initiate-translation/<int:language_id>/", ChapterTranslationView.as_view(), name="chapter_initiate_translation"),
     path("chapters/<int:pk>/check-translation-status/", CheckTranslationStatusView.as_view(), name="chapter_check_translation_status"),
     path("chapters/<int:pk>/changelog/", ChapterChangelogView.as_view(), name="chapter_changelog"),
+    path("chapters/<int:pk>/compare/", ChapterVersionCompareView.as_view(), name="chapter_version_compare"),
     path("chapters/diff/", ChapterDiffView.as_view(), name="chapter_diff"),
     
     # Chapter schedule and publish

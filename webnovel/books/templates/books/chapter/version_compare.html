@@ -1,0 +1,865 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Version Compare - {{ chapter.title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'books:book_detail' chapter.book.pk %}">{{ chapter.book.title }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'books:chapter_detail' chapter.pk %}">{{ chapter.title }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Version Compare</li>
+                </ol>
+            </nav>
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h1 class="h3">Version Comparison: "{{ chapter.title }}"</h1>
+                <div>
+                    <a href="{% url 'books:chapter_changelog' chapter.pk %}" class="btn btn-outline-info btn-sm me-2">
+                        <i class="fas fa-history"></i> Changelog
+                    </a>
+                    <a href="{% url 'books:chapter_detail' chapter.pk %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </a>
+                </div>
+            </div>
+
+            <!-- Version Selector -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center" style="cursor: pointer;" onclick="toggleVersionSelector()">
+                    <h5 class="mb-0">
+                        <i class="fas fa-exchange-alt"></i> Select Versions to Compare
+                    </h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary me-2" onclick="event.stopPropagation(); swapVersions()">
+                            <i class="fas fa-arrows-alt-h"></i> Swap
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation(); resetComparison()">
+                            <i class="fas fa-undo"></i> Reset
+                        </button>
+                        <i class="fas fa-chevron-down ms-2" id="version-selector-icon"></i>
+                    </div>
+                </div>
+                <div class="card-body" id="version-selector-body">
+                    <!-- Version Type Legend -->
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="alert alert-info py-2">
+                                <div class="row text-center">
+                                    <div class="col-md-4">
+                                        <span class="badge bg-primary me-1">Original</span>
+                                        <small>Original content</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <span class="badge bg-success me-1">Translation</span>
+                                        <small>Different languages</small>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <span class="badge bg-info me-1">Version X</span>
+                                        <small>Edit history</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="version1-select" class="form-label">Version 1 (Left)</label>
+                            <select id="version1-select" class="form-select form-select-sm" onchange="updateComparison()">
+                                <option value="">Loading versions...</option>
+                            </select>
+                            <div id="version1-notes" class="mt-2" style="display: none;"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="version2-select" class="form-label">Version 2 (Right)</label>
+                            <select id="version2-select" class="form-select form-select-sm" onchange="updateComparison()">
+                                <option value="">Loading versions...</option>
+                            </select>
+                            <div id="version2-notes" class="mt-2" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comparison Container -->
+            <div id="comparison-container" class="comparison-container">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading comparison...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let availableVersions = [];
+let currentComparison = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadComparison();
+});
+
+function toggleVersionSelector() {
+    const body = document.getElementById('version-selector-body');
+    const icon = document.getElementById('version-selector-icon');
+    
+    if (body.style.display === 'none') {
+        body.style.display = 'block';
+        icon.className = 'fas fa-chevron-down ms-2';
+    } else {
+        body.style.display = 'none';
+        icon.className = 'fas fa-chevron-right ms-2';
+    }
+}
+
+function loadComparison() {
+    console.log('Loading comparison for chapter:', {{ chapter.id }});
+    
+    const url = new URL(`{% url 'books:chapter_version_compare' chapter.pk %}`, window.location.origin);
+    url.searchParams.set('format', 'json');
+    
+    fetch(url, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Comparison data:', data);
+        
+        if (data.success) {
+            availableVersions = data.available_versions;
+            currentComparison = data.comparison;
+            populateVersionSelectors();
+            displayComparison(data.comparison);
+        } else {
+            displayError(data.error || 'Failed to load comparison');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading comparison:', error);
+        displayError('Failed to load comparison: ' + error.message);
+    });
+}
+
+function populateVersionSelectors() {
+    const version1Select = document.getElementById('version1-select');
+    const version2Select = document.getElementById('version2-select');
+    
+    // Clear existing options
+    version1Select.innerHTML = '';
+    version2Select.innerHTML = '';
+    
+    // Populate with available versions
+    availableVersions.forEach(version => {
+        const option1 = document.createElement('option');
+        option1.value = version.id;
+        
+        // Create display text based on version type
+        let displayText = '';
+        if (version.version_type === 'history') {
+            displayText = `${version.title} - ${version.type} (by ${version.user})`;
+        } else {
+            displayText = `${version.title} (${version.language}) - ${version.type}`;
+        }
+        
+        option1.textContent = displayText;
+        version1Select.appendChild(option1);
+        
+        const option2 = document.createElement('option');
+        option2.value = version.id;
+        option2.textContent = displayText;
+        version2Select.appendChild(option2);
+    });
+    
+    // Set default selections (first two versions)
+    if (availableVersions.length >= 2) {
+        version1Select.value = availableVersions[0].id;
+        version2Select.value = availableVersions[1].id;
+    } else if (availableVersions.length === 1) {
+        version1Select.value = availableVersions[0].id;
+        version2Select.value = availableVersions[0].id;
+    }
+}
+
+function updateComparison() {
+    const version1Id = document.getElementById('version1-select').value;
+    const version2Id = document.getElementById('version2-select').value;
+    
+    if (!version1Id || !version2Id) {
+        return;
+    }
+    
+    const url = new URL(`{% url 'books:chapter_version_compare' chapter.pk %}`, window.location.origin);
+    url.searchParams.set('version1', version1Id);
+    url.searchParams.set('version2', version2Id);
+    url.searchParams.set('format', 'json');
+    
+    fetch(url, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentComparison = data.comparison;
+            displayComparison(data.comparison);
+        } else {
+            displayError(data.error || 'Failed to update comparison');
+        }
+    })
+    .catch(error => {
+        console.error('Error updating comparison:', error);
+        displayError('Failed to update comparison: ' + error.message);
+    });
+}
+
+function formatContentWithLineNumbers(content) {
+    if (!content) return '';
+    return escapeHtml(content);
+}
+
+function generateLineNumbers(content, lineTableId) {
+    const lineTableElement = document.getElementById(lineTableId);
+    
+    if (!lineTableElement) {
+        console.error('Could not find line table element:', lineTableId);
+        return;
+    }
+    
+    // Get the content and split into lines (paragraphs)
+    const lines = content.split('\n');
+    
+    console.log(`Generating line table for ${lineTableId}, content paragraphs: ${lines.length}`);
+    
+    // Create table structure with line numbers and content
+    // Only create one row per paragraph, not per wrapped line
+    let tableHtml = '';
+    for (let i = 0; i < lines.length; i++) {
+        const lineNumber = i + 1;
+        const lineContent = escapeHtml(lines[i]);
+        tableHtml += `
+            <div class="line-row">
+                <div class="line-number-cell">${lineNumber}</div>
+                <div class="line-content-cell">${lineContent}</div>
+            </div>
+        `;
+    }
+    
+    lineTableElement.innerHTML = tableHtml;
+    console.log(`Generated ${lines.length} line rows for ${lineTableId}`);
+}
+
+function syncScroll(scrolledPanelId, targetPanelId) {
+    const scrolledPanel = document.getElementById(scrolledPanelId);
+    const targetPanel = document.getElementById(targetPanelId);
+    
+    if (!scrolledPanel || !targetPanel) {
+        console.error('Could not find panels:', { scrolledPanelId, targetPanelId });
+        return;
+    }
+    
+    const scrolledContent = scrolledPanel.querySelector('.scrollable-content');
+    const targetContent = targetPanel.querySelector('.scrollable-content');
+    
+    if (!scrolledContent || !targetContent) {
+        console.error('Could not find scrollable content:', { scrolledPanelId, targetPanelId });
+        return;
+    }
+    
+    // Check if this scroll event is from the scrolledContent itself
+    const isFromScrolledContent = event && event.target === scrolledContent;
+    
+    if (isFromScrolledContent && !scrolledPanel.isScrolling) {
+        // Prevent infinite loop
+        scrolledPanel.isScrolling = true;
+        targetPanel.isScrolling = true;
+        
+        // Calculate scroll percentage (0 to 1)
+        const scrolledScrollTop = scrolledContent.scrollTop;
+        const scrolledScrollHeight = scrolledContent.scrollHeight - scrolledContent.clientHeight;
+        const scrolledScrollPercentage = scrolledScrollHeight > 0 ? scrolledScrollTop / scrolledScrollHeight : 0;
+        
+        // Apply the same percentage to the target panel
+        const targetScrollHeight = targetContent.scrollHeight - targetContent.clientHeight;
+        const targetScrollTop = targetScrollHeight * scrolledScrollPercentage;
+        
+        targetContent.scrollTop = targetScrollTop;
+        
+        console.log(`Syncing scroll: ${scrolledPanelId} -> ${targetPanelId}, percentage: ${(scrolledScrollPercentage * 100).toFixed(1)}%`);
+        
+        // Reset flags after a short delay
+        setTimeout(() => {
+            scrolledPanel.isScrolling = false;
+            targetPanel.isScrolling = false;
+        }, 50);
+    }
+}
+
+function displayComparison(comparison) {
+    const container = document.getElementById('comparison-container');
+    
+    if (!comparison) {
+        container.innerHTML = '<div class="alert alert-warning">No comparison data available</div>';
+        return;
+    }
+    
+    const version1 = comparison.version1;
+    const version2 = comparison.version2;
+    
+    // Update version notes under dropdowns
+    updateVersionNotes(version1, version2);
+    
+    let html = `
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-file-alt"></i> Version 1
+                            ${getVersionBadge(version1)}
+                        </h6>
+                        <small class="text-muted">
+                            ${getVersionInfo(version1)}
+                        </small>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">${escapeHtml(version1.title)}</h5>
+                        <div class="content-panel" id="content-panel-1">
+                            <div class="scrollable-content" onscroll="syncScroll('content-panel-1', 'content-panel-2')">
+                                <div class="line-table" id="line-table-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">
+                            <i class="fas fa-file-alt"></i> Version 2
+                            ${getVersionBadge(version2)}
+                        </h6>
+                        <small class="text-muted">
+                            ${getVersionInfo(version2)}
+                        </small>
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title">${escapeHtml(version2.title)}</h5>
+                        <div class="content-panel" id="content-panel-2">
+                            <div class="scrollable-content" onscroll="syncScroll('content-panel-2', 'content-panel-1')">
+                                <div class="line-table" id="line-table-2"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add diff section if there are differences
+    if (comparison.diffs && (comparison.diffs.title || comparison.diffs.content)) {
+        html += `
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="fas fa-code-branch"></i> Differences
+                                <button class="btn btn-outline-primary btn-sm ms-2" onclick="toggleDiffView()">
+                                    <i class="fas fa-eye"></i> Toggle Diff View
+                                </button>
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="diff-view" style="display: none;">
+                                ${buildDiffHtml(comparison.diffs)}
+                            </div>
+                            <div id="summary-view">
+                                ${buildSummaryHtml(comparison)}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+    
+    // Generate line numbers after content is rendered
+    setTimeout(() => {
+        generateLineNumbers(version1.content, 'line-table-1');
+        generateLineNumbers(version2.content, 'line-table-2');
+        
+        // Add scroll progress indicators
+        addScrollProgressIndicators();
+    }, 100);
+}
+
+function updateVersionNotes(version1, version2) {
+    const notes1 = document.getElementById('version1-notes');
+    const notes2 = document.getElementById('version2-notes');
+    
+    // Clear previous notes
+    notes1.innerHTML = '';
+    notes2.innerHTML = '';
+    
+    // Show notes for version 1 if it's a history version
+    if (version1.version_type === 'history' && version1.change_notes) {
+        notes1.innerHTML = `
+            <div class="alert alert-info py-2 mb-0">
+                <small>
+                    <strong>Change Notes:</strong> ${escapeHtml(version1.change_notes)}
+                </small>
+            </div>
+        `;
+        notes1.style.display = 'block';
+    } else {
+        notes1.style.display = 'none';
+    }
+    
+    // Show notes for version 2 if it's a history version
+    if (version2.version_type === 'history' && version2.change_notes) {
+        notes2.innerHTML = `
+            <div class="alert alert-info py-2 mb-0">
+                <small>
+                    <strong>Change Notes:</strong> ${escapeHtml(version2.change_notes)}
+                </small>
+            </div>
+        `;
+        notes2.style.display = 'block';
+    } else {
+        notes2.style.display = 'none';
+    }
+}
+
+function getVersionBadge(version) {
+    if (version.version_type === 'history') {
+        return `<span class="badge bg-info ms-2">Version ${version.version_number}</span>`;
+    } else if (version.is_original) {
+        return `<span class="badge bg-primary ms-2">Original</span>`;
+    } else {
+        return `<span class="badge bg-success ms-2">Translation</span>`;
+    }
+}
+
+function getVersionInfo(version) {
+    let info = `Language: ${version.language} | Updated: ${version.updated_at}`;
+    
+    if (version.version_type === 'history') {
+        info += ` | By: ${version.user}`;
+    }
+    
+    return info;
+}
+
+function buildDiffHtml(diffs) {
+    let html = '';
+    
+    if (diffs.title) {
+        html += `
+            <div class="mb-3">
+                <h6>Title Differences:</h6>
+                <pre class="diff-code">${enhanceDiffDisplay(diffs.title)}</pre>
+            </div>
+        `;
+    }
+    
+    if (diffs.content) {
+        html += `
+            <div class="mb-3">
+                <h6>Content Differences:</h6>
+                <pre class="diff-code">${enhanceDiffDisplay(diffs.content)}</pre>
+            </div>
+        `;
+    }
+    
+    return html;
+}
+
+function buildSummaryHtml(comparison) {
+    const version1 = comparison.version1;
+    const version2 = comparison.version2;
+    
+    let summary = '<div class="row">';
+    
+    // Title comparison
+    if (version1.title !== version2.title) {
+        summary += `
+            <div class="col-md-6">
+                <div class="alert alert-warning">
+                    <strong>Title:</strong> Different
+                    <br><small>V1: "${version1.title}"</small>
+                    <br><small>V2: "${version2.title}"</small>
+                </div>
+            </div>
+        `;
+    } else {
+        summary += `
+            <div class="col-md-6">
+                <div class="alert alert-success">
+                    <strong>Title:</strong> Identical
+                </div>
+            </div>
+        `;
+    }
+    
+    // Content comparison
+    const contentLength1 = version1.content.length;
+    const contentLength2 = version2.content.length;
+    const contentDiff = Math.abs(contentLength1 - contentLength2);
+    
+    if (version1.content !== version2.content) {
+        summary += `
+            <div class="col-md-6">
+                <div class="alert alert-warning">
+                    <strong>Content:</strong> Different
+                    <br><small>V1: ${contentLength1} characters</small>
+                    <br><small>V2: ${contentLength2} characters</small>
+                    <br><small>Difference: ${contentDiff} characters</small>
+                </div>
+            </div>
+        `;
+    } else {
+        summary += `
+            <div class="col-md-6">
+                <div class="alert alert-success">
+                    <strong>Content:</strong> Identical
+                    <br><small>Length: ${contentLength1} characters</small>
+                </div>
+            </div>
+        `;
+    }
+    
+    summary += '</div>';
+    return summary;
+}
+
+function toggleDiffView() {
+    const diffView = document.getElementById('diff-view');
+    const summaryView = document.getElementById('summary-view');
+    const button = event.target.closest('button');
+    
+    if (diffView.style.display === 'none') {
+        diffView.style.display = 'block';
+        summaryView.style.display = 'none';
+        button.innerHTML = '<i class="fas fa-eye-slash"></i> Hide Diff View';
+    } else {
+        diffView.style.display = 'none';
+        summaryView.style.display = 'block';
+        button.innerHTML = '<i class="fas fa-eye"></i> Show Diff View';
+    }
+}
+
+function swapVersions() {
+    const version1Select = document.getElementById('version1-select');
+    const version2Select = document.getElementById('version2-select');
+    
+    const temp = version1Select.value;
+    version1Select.value = version2Select.value;
+    version2Select.value = temp;
+    
+    updateComparison();
+}
+
+function resetComparison() {
+    if (availableVersions.length >= 2) {
+        document.getElementById('version1-select').value = availableVersions[0].id;
+        document.getElementById('version2-select').value = availableVersions[1].id;
+    }
+    updateComparison();
+}
+
+function displayError(message) {
+    const container = document.getElementById('comparison-container');
+    container.innerHTML = `
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Error:</strong> ${message}
+        </div>
+    `;
+}
+
+function enhanceDiffDisplay(diffText) {
+    if (!diffText) return 'No differences';
+    
+    const lines = diffText.split('\n');
+    const enhancedLines = lines.map(line => {
+        if (line.startsWith('+')) {
+            return `<span class="diff-added">${escapeHtml(line)}</span>`;
+        } else if (line.startsWith('-')) {
+            return `<span class="diff-removed">${escapeHtml(line)}</span>`;
+        } else if (line.startsWith('@')) {
+            return `<span class="diff-context">${escapeHtml(line)}</span>`;
+        } else {
+            return escapeHtml(line);
+        }
+    });
+    
+    return enhancedLines.join('\n');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function addScrollProgressIndicators() {
+    const panel1 = document.getElementById('content-panel-1');
+    const panel2 = document.getElementById('content-panel-2');
+    
+    if (panel1 && panel2) {
+        // Add progress indicators to both panels
+        addScrollProgressToPanel(panel1, 'panel-1-progress');
+        addScrollProgressToPanel(panel2, 'panel-2-progress');
+    }
+}
+
+function addScrollProgressToPanel(panel, progressId) {
+    const scrollableContent = panel.querySelector('.scrollable-content');
+    if (!scrollableContent) return;
+    
+    // Create progress indicator
+    const progressDiv = document.createElement('div');
+    progressDiv.id = progressId;
+    progressDiv.className = 'scroll-progress';
+    progressDiv.innerHTML = `
+        <div class="progress-bar">
+            <div class="progress-fill"></div>
+        </div>
+        <small class="progress-text">0%</small>
+    `;
+    
+    // Insert after the panel (outside the content box)
+    panel.parentNode.insertBefore(progressDiv, panel.nextSibling);
+    
+    // Update progress on scroll
+    scrollableContent.addEventListener('scroll', () => {
+        updateScrollProgress(scrollableContent, progressId);
+    });
+    
+    // Initial update
+    updateScrollProgress(scrollableContent, progressId);
+}
+
+function updateScrollProgress(scrollableContent, progressId) {
+    const progressDiv = document.getElementById(progressId);
+    if (!progressDiv) return;
+    
+    const scrollTop = scrollableContent.scrollTop;
+    const scrollHeight = scrollableContent.scrollHeight - scrollableContent.clientHeight;
+    const percentage = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+    
+    const progressFill = progressDiv.querySelector('.progress-fill');
+    const progressText = progressDiv.querySelector('.progress-text');
+    
+    if (progressFill) {
+        progressFill.style.width = `${percentage}%`;
+    }
+    if (progressText) {
+        progressText.textContent = `${percentage.toFixed(1)}%`;
+    }
+}
+</script>
+
+<style>
+.content-panel {
+    display: flex;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    background: #f8f9fa;
+    max-height: 500px;
+    overflow: hidden;
+}
+
+.scrollable-content {
+    display: flex;
+    flex: 1;
+    overflow: auto;
+    background: white;
+}
+
+.line-table {
+    width: 100%;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.line-row {
+    display: flex;
+    min-height: 1.5em;
+    align-items: flex-start;
+}
+
+.line-number-cell {
+    background: #e9ecef;
+    border-right: 1px solid #dee2e6;
+    min-width: 50px;
+    text-align: right;
+    color: #6c757d;
+    user-select: none;
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0.75rem 0.5rem 0 0.5rem;
+    min-height: 1.5em;
+}
+
+.line-content-cell {
+    flex: 1;
+    background: white;
+    padding: 0.75rem 0.75rem 0 0.75rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    display: flex;
+    align-items: flex-start;
+    min-height: 1.5em;
+}
+
+.diff-code {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    max-height: 500px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Diff syntax highlighting */
+.diff-added {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.diff-removed {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.diff-context {
+    background-color: #f8f9fa;
+    color: #6c757d;
+}
+
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+/* Compact version selector */
+#version-selector-body {
+    transition: all 0.3s ease;
+}
+
+.card-header:hover {
+    background-color: #e9ecef;
+}
+
+/* Maximize comparison space */
+.comparison-container {
+    min-height: 70vh;
+}
+
+/* Synchronized scrolling */
+.content-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.content-panel::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.content-panel::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.content-panel::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .content-panel {
+        max-height: 400px;
+    }
+    
+    .diff-code {
+        max-height: 300px;
+    }
+    
+    .line-number-cell {
+        min-width: 2.5rem;
+        font-size: 0.75rem;
+    }
+}
+
+.scroll-progress {
+    position: relative;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-top: none;
+    border-radius: 0 0 0.375rem 0.375rem;
+    color: #6c757d;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: -1px; /* Overlap the border with content panel */
+}
+
+.progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #e9ecef;
+    border-radius: 3px;
+    margin-right: 0.5rem;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #007bff;
+    width: 0%;
+    transition: width 0.1s ease;
+}
+
+.progress-text {
+    color: #6c757d;
+    font-weight: bold;
+    min-width: 40px;
+    text-align: right;
+}
+</style>
+{% endblock %} 

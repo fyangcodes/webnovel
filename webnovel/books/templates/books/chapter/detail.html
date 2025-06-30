@@ -72,6 +72,9 @@
             <a href="{% url 'books:chapter_changelog' chapter.pk %}" class="btn btn-outline-info">
                 <i class="fas fa-history"></i> Changelog
             </a>
+            <a href="{% url 'books:chapter_version_compare' chapter.pk %}" class="btn btn-outline-warning">
+                <i class="fas fa-exchange-alt"></i> Compare
+            </a>
             <a href="{% url 'books:chapter_delete' chapter.pk %}" class="btn btn-outline-danger">
                 <i class="fas fa-trash"></i> Delete
             </a>
