@@ -480,7 +480,7 @@ class ChangeLog(TimeStampedModel):
     )
     status = models.CharField(max_length=50, default="completed")
     notes = models.TextField(blank=True)
-    version = models.PositiveIntegerField(default=1)
+    version = AutoIncrementingPositiveIntegerField(scope_field="changed_object_id")
     diff = models.TextField(
         blank=True, help_text="Optional: store a diff of the change"
     )

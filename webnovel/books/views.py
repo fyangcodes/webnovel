@@ -20,6 +20,7 @@ import logging
 from django.views.decorators.http import require_http_methods
 from django.views import View
 import difflib
+from django.db import models
 
 from .models import Book, Chapter, Language, ChangeLog
 from .tasks import process_bookfile_async, translate_chapter_async
@@ -239,44 +240,72 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
         
         response = super().form_valid(form)
         
-        # Create changelog entry for manual edits to translations
-        if is_translation:
-            try:
-                content_type = ContentType.objects.get_for_model(Chapter)
+        # Create changelog entry for manual edits to all chapters
+        try:
+            content_type = ContentType.objects.get_for_model(Chapter)
+            
+            # Check for any changes (title or content)
+            title_changed = original_title and original_title != chapter.title
+            content_changed = original_content and original_content != chapter.content
+            
+            # Generate diff if there are any changes
+            diff_content = ""
+            if title_changed or content_changed:
+                title_diff = ""
+                content_diff = ""
                 
-                # Generate diff if we have original content
-                diff_content = ""
-                if original_content and original_content != chapter.content:
+                if title_changed:
+                    title_diff = self._generate_diff(
+                        original_title,
+                        chapter.title,
+                        context_lines=1
+                    )
+                
+                if content_changed:
                     content_diff = self._generate_diff(
                         original_content,
                         chapter.content,
                         context_lines=3
                     )
-                    title_diff = ""
-                    if original_title and original_title != chapter.title:
-                        title_diff = self._generate_diff(
-                            original_title,
-                            chapter.title,
-                            context_lines=1
-                        )
-                    
+                
+                # Build the diff content
+                if title_changed and content_changed:
                     diff_content = f"Title Changes:\n{title_diff}\n\nContent Changes:\n{content_diff}"
+                elif title_changed:
+                    diff_content = f"Title Changes:\n{title_diff}"
+                elif content_changed:
+                    diff_content = f"Content Changes:\n{content_diff}"
+            
+            # Create changelog entry if there are any changes
+            if title_changed or content_changed:
+                # Determine the notes based on what changed
+                change_description = []
+                if title_changed:
+                    change_description.append("title")
+                if content_changed:
+                    change_description.append("content")
+                
+                change_text = " and ".join(change_description)
+                
+                if is_translation:
+                    notes = f"Manual edit applied to {chapter.language.name if chapter.language else 'Unknown'} translation ({change_text} modified)"
+                else:
+                    notes = f"Manual edit applied to original chapter ({change_text} modified)"
                 
                 ChangeLog.objects.create(
                     content_type=content_type,
-                    original_object_id=chapter.original_chapter.id,
+                    original_object_id=chapter.original_chapter.id if is_translation else chapter.id,
                     changed_object_id=chapter.id,
                     user=self.request.user,
                     change_type="edit",
                     status="completed",
-                    notes=f"Manual edit applied to {chapter.language.name if chapter.language else 'Unknown'} translation",
-                    version=1,
+                    notes=notes,
                     diff=diff_content,
                 )
-            except Exception as e:
-                logger.error(
-                    f"Failed to create changelog entry for manual edit: {str(e)}"
-                )
+        except Exception as e:
+            logger.error(
+                f"Failed to create changelog entry for manual edit: {str(e)}"
+            )
         
         messages.success(
             self.request, f"Chapter '{form.instance.title}' updated successfully!"
@@ -717,7 +746,6 @@ class ChapterTranslationView(LoginRequiredMixin, View):
                 change_type=change_type,
                 status=status,
                 notes=notes,
-                version=1,
             )
         except Exception as e:
             logger.error(f"Failed to create changelog entry: {str(e)}")
@@ -982,6 +1010,15 @@ class ChapterChangelogView(LoginRequiredMixin, View):
             
             debug_info["entries_as_original"] = original_entries.count()
             debug_info["entries_as_changed"] = changed_entries.count()
+            
+            # Version statistics
+            if changed_entries.exists():
+                max_version = changed_entries.aggregate(max_version=models.Max('version'))['max_version']
+                debug_info["max_version"] = max_version or 0
+                debug_info["version_range"] = f"1 - {max_version}"
+            else:
+                debug_info["max_version"] = 0
+                debug_info["version_range"] = "No versions"
             
             # If translation, get entries for the original chapter
             if chapter.original_chapter:

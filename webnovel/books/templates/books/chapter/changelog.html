@@ -118,7 +118,10 @@ function displayChangelog(entries) {
                 <div class="timeline-content">
                     <div class="d-flex justify-content-between align-items-start">
                         <h6 class="mb-1">${entry.change_type}</h6>
-                        <span class="badge ${statusClass}">${entry.status}</span>
+                        <div>
+                            <span class="badge ${statusClass}">${entry.status}</span>
+                            <span class="badge bg-info ms-1">v${entry.version}</span>
+                        </div>
                     </div>
                     <p class="text-muted mb-2">
                         <small>
