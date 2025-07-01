@@ -40,6 +40,9 @@ CSRF_TRUSTED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
+    # Custom user model
+    "accounts.apps.AccountsConfig",
+    # Django apps
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -54,7 +57,6 @@ INSTALLED_APPS = [
     "crispy_bootstrap5",
     "imagekit",
     # Local apps
-    "accounts.apps.AccountsConfig",
     "books.apps.BooksConfig",
     "llm_integration.apps.LlmIntegrationConfig",
 ]
@@ -178,18 +180,18 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # LLM Integration Settings
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-3.5-turbo")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "gpt-3.5-turbo")
 LLM_MAX_TOKENS = 2000
 LLM_TEMPERATURE = 0.3
 
 # Provider-specific API keys (for easy switching)
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
-MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
 
 # LLM Provider Configuration
 LLM_PROVIDERS = {
