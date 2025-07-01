@@ -1,0 +1,34 @@
+{
+    "include": [
+        "webnovel"
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/migrations",
+        ".venv",
+        "staticfiles",
+        "media"
+    ],
+    "ignore": [
+        "**/migrations"
+    ],
+    "reportMissingImports": "warning",
+    "reportMissingTypeStubs": false,
+    "pythonVersion": "3.12",
+    "pythonPlatform": "Linux",
+    "executionEnvironments": [
+        {
+            "root": "webnovel",
+            "pythonVersion": "3.12",
+            "pythonPlatform": "Linux",
+            "extraPaths": [
+                "webnovel"
+            ]
+        }
+    ],
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "autoImportCompletions": true,
+    "autoSearchPaths": true
+}

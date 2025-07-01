@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Translation Assignments{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <!-- Page Header -->
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h3 mb-0">
+                        <i class="fas fa-language"></i> Translation Assignments
+                    </h1>
+                    <p class="text-muted">Manage your translation tasks and track progress</p>
+                </div>
+                <div>
+                    <a href="{% url 'accounts:profile' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Profile
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        {% if filter_form %}
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-filter"></i> Filters</h5>
+                </div>
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-3">
+                            <label for="{{ filter_form.status.id_for_label }}" class="form-label">Status</label>
+                            {{ filter_form.status }}
+                        </div>
+                        <div class="col-md-3">
+                            <label for="{{ filter_form.target_language.id_for_label }}" class="form-label">Target
+                                Language</label>
+                            {{ filter_form.target_language }}
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                {{ filter_form.is_overdue }}
+                                <label class="form-check-label" for="{{ filter_form.is_overdue.id_for_label }}">
+                                    Overdue Only
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="d-flex gap-2 mt-4">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search"></i> Apply Filters
+                                </button>
+                                <a href="{% url 'accounts:translation_assignments' %}"
+                                    class="btn btn-outline-secondary">
+                                    <i class="fas fa-times"></i> Clear
+                                </a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Statistics Cards -->
+        <div class="col-md-3 mb-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h4 class="text-primary">{{ total_assignments }}</h4>
+                    <small class="text-muted">Total Assignments</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h4 class="text-warning">{{ in_progress_count }}</h4>
+                    <small class="text-muted">In Progress</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h4 class="text-info">{{ review_count }}</h4>
+                    <small class="text-muted">Under Review</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h4 class="text-success">{{ completed_count }}</h4>
+                    <small class="text-muted">Completed</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Translation Assignments List -->
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list"></i> Assignments</h5>
+                </div>
+                <div class="card-body">
+                    {% if assignments %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Chapter</th>
+                                    <th>Book</th>
+                                    <th>Target Language</th>
+                                    <th>Status</th>
+                                    <th>Assigned</th>
+                                    <th>Due Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for assignment in assignments %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ assignment.chapter.title }}</strong>
+                                        <br>
+                                        <small class="text-muted">Chapter {{ assignment.chapter.chapter_number
+                                            }}</small>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'books:book_detail' assignment.chapter.book.id %}"
+                                            class="text-decoration-none">
+                                            {{ assignment.chapter.book.title }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">
+                                            {{ assignment.target_language.name }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if assignment.status == 'pending' %}
+                                        <span class="badge bg-secondary">Pending</span>
+                                        {% elif assignment.status == 'assigned' %}
+                                        <span class="badge bg-primary">Assigned</span>
+                                        {% elif assignment.status == 'in_progress' %}
+                                        <span class="badge bg-warning">In Progress</span>
+                                        {% elif assignment.status == 'review' %}
+                                        <span class="badge bg-info">Under Review</span>
+                                        {% elif assignment.status == 'approved' %}
+                                        <span class="badge bg-success">Approved</span>
+                                        {% elif assignment.status == 'rejected' %}
+                                        <span class="badge bg-danger">Rejected</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small>{{ assignment.assigned_at|date:"M d, Y" }}</small>
+                                        {% if assignment.assigned_by %}
+                                        <br>
+                                        <small class="text-muted">by {{ assignment.assigned_by.display_name }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if assignment.due_date %}
+                                        {% if assignment.is_overdue %}
+                                        <span class="text-danger">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            {{ assignment.due_date|date:"M d, Y" }}
+                                        </span>
+                                        {% else %}
+                                        {{ assignment.due_date|date:"M d, Y" }}
+                                        {% if assignment.days_remaining %}
+                                        <br>
+                                        <small class="text-muted">{{ assignment.days_remaining }} days left</small>
+                                        {% endif %}
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">No due date</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'accounts:translation_assignment_detail' assignment.id %}"
+                                                class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i> View
+                                            </a>
+                                            {% if assignment.status == 'assigned' %}
+                                            <a href="{% url 'accounts:start_translation_assignment' assignment.id %}"
+                                                class="btn btn-sm btn-success">
+                                                <i class="fas fa-play"></i> Start
+                                            </a>
+                                            {% elif assignment.status == 'in_progress' %}
+                                            <a href="{% url 'accounts:submit_translation_assignment' assignment.id %}"
+                                                class="btn btn-sm btn-warning">
+                                                <i class="fas fa-upload"></i> Submit
+                                            </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if is_paginated %}
+                    <nav aria-label="Translation assignments pagination">
+                        <ul class="pagination justify-content-center">
+                            {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link"
+                                    href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.target_language %}&target_language={{ request.GET.target_language }}{% endif %}{% if request.GET.is_overdue %}&is_overdue={{ request.GET.is_overdue }}{% endif %}">
+                                    <i class="fas fa-angle-double-left"></i>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link"
+                                    href="?page={{ page_obj.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.target_language %}&target_language={{ request.GET.target_language }}{% endif %}{% if request.GET.is_overdue %}&is_overdue={{ request.GET.is_overdue }}{% endif %}">
+                                    <i class="fas fa-angle-left"></i>
+                                </a>
+                            </li>
+                            {% endif %}
+
+                            <li class="page-item active">
+                                <span class="page-link">
+                                    Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                                </span>
+                            </li>
+
+                            {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link"
+                                    href="?page={{ page_obj.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.target_language %}&target_language={{ request.GET.target_language }}{% endif %}{% if request.GET.is_overdue %}&is_overdue={{ request.GET.is_overdue }}{% endif %}">
+                                    <i class="fas fa-angle-right"></i>
+                                </a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link"
+                                    href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.target_language %}&target_language={{ request.GET.target_language }}{% endif %}{% if request.GET.is_overdue %}&is_overdue={{ request.GET.is_overdue }}{% endif %}">
+                                    <i class="fas fa-angle-double-right"></i>
+                                </a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+                    {% else %}
+                    <!-- Empty State -->
+                    <div class="text-center py-5">
+                        <i class="fas fa-language fa-3x text-muted mb-3"></i>
+                        <h4 class="text-muted">No Translation Assignments</h4>
+                        <p class="text-muted">You don't have any translation assignments yet.</p>
+                        <a href="{% url 'books:book_list' %}" class="btn btn-primary">
+                            <i class="fas fa-book"></i> Browse Books
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -15,16 +15,29 @@ def get_user_permissions(user, book=None):
     Returns:
         dict: Dictionary of permissions
     """
-    permissions = {
-        "can_read": True,  # Everyone can read
-        "can_write": user.role in ["writer", "editor", "admin"],
-        "can_translate": user.role in ["translator", "editor", "admin"],
-        "can_edit": user.role in ["editor", "admin"],
-        "can_approve": user.role in ["editor", "admin"],
-        "can_delete": user.role == "admin",
-        "can_assign_translations": user.role in ["editor", "admin"],
-        "can_manage_users": user.role == "admin",
-    }
+    # Superusers have all permissions
+    if user.is_superuser:
+        permissions = {
+            "can_read": True,
+            "can_write": True,
+            "can_translate": True,
+            "can_edit": True,
+            "can_approve": True,
+            "can_delete": True,
+            "can_assign_translations": True,
+            "can_manage_users": True,
+        }
+    else:
+        permissions = {
+            "can_read": True,  # Everyone can read
+            "can_write": user.role in ["writer", "editor", "admin"],
+            "can_translate": user.role in ["translator", "editor", "admin"],
+            "can_edit": user.role in ["editor", "admin"],
+            "can_approve": user.role in ["editor", "admin"],
+            "can_delete": user.role == "admin",
+            "can_assign_translations": user.role in ["editor", "admin"],
+            "can_manage_users": user.role == "admin",
+        }
 
     if book:
         # Check book-specific permissions
@@ -67,7 +80,10 @@ def get_books_user_can_access(user):
     """
     from books.models import Book
 
-    if user.role == "admin":
+    # Superusers can access all books
+    if user.is_superuser:
+        return Book.objects.all()
+    elif user.role == "admin":
         return Book.objects.all()
     elif user.role in ["editor", "writer"]:
         return Book.objects.filter(
@@ -95,7 +111,10 @@ def get_translation_assignments_for_user(user):
     Returns:
         QuerySet: Translation assignments for the user
     """
-    if user.role in ["translator", "editor", "admin"]:
+    # Superusers can see all translation assignments
+    if user.is_superuser:
+        return TranslationAssignment.objects.all()
+    elif user.role in ["translator", "editor", "admin"]:
         return user.translation_assignments.all()
     return TranslationAssignment.objects.none()
 
@@ -186,7 +205,10 @@ def get_available_roles_for_user(current_user, target_user=None):
     Returns:
         list: Available role choices
     """
-    if current_user.role == "admin":
+    # Superusers can assign all roles
+    if current_user.is_superuser:
+        return User.ROLE_CHOICES
+    elif current_user.role == "admin":
         return User.ROLE_CHOICES
     elif current_user.role == "editor":
         # Editors can assign reader, writer, and translator roles
