@@ -68,8 +68,8 @@ class User(AbstractUser):
 
     def save(self, *args, **kwargs):
         # Generate thumbnail when avatar is saved
-        if self.avatar and not self.avatar_thumbnail:
-            self.avatar_thumbnail = self.avatar
+        # if self.avatar and not self.avatar_thumbnail:
+        #     self.avatar_thumbnail = self.avatar
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -115,8 +115,8 @@ class BookCollaborator(models.Model):
         ("owner", "Owner"),
         ("co_author", "Co-Author"),
         ("translator", "Translator"),
-        ("editor", "Editor"),
         ("reviewer", "Reviewer"),
+        ("editor", "Editor"),
     ]
 
     book = models.ForeignKey(
@@ -148,35 +148,34 @@ class BookCollaborator(models.Model):
         base_permissions = {
             "can_read": True,
             "can_write": False,
-            "can_translate": False,
             "can_edit": False,
-            "can_approve": False,
             "can_delete": False,
+            "can_translate": False,
+            "can_approve": False,
         }
 
         role_permissions = {
             "owner": {
                 "can_write": True,
-                "can_translate": True,
                 "can_edit": True,
-                "can_approve": True,
                 "can_delete": True,
             },
             "co_author": {
                 "can_write": True,
-                "can_translate": True,
+                "can_edit": True,
+                "can_delete": True,
             },
             "translator": {
                 "can_translate": True,
             },
-            "editor": {
-                "can_write": True,
-                "can_translate": True,
-                "can_edit": True,
+            "reviewer": {
                 "can_approve": True,
             },
-            "reviewer": {
-                "can_read": True,
+            "editor": {
+                "can_write": True,
+                "can_edit": True,
+                "can_delete": True,
+                "can_translate": True,
                 "can_approve": True,
             },
         }
