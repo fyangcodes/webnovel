@@ -3,6 +3,7 @@ from django.urls import path
 from django.shortcuts import redirect
 from django.contrib import messages
 from .models import Book, Chapter, Language, BookFile, Author, ChangeLog, ChapterImage, ChapterMedia
+from .tasks import sync_media_with_content_async, rebuild_structured_content_from_media_async
 
 
 class BookFileInline(admin.TabularInline):
@@ -221,54 +222,61 @@ class ChapterAdmin(admin.ModelAdmin):
 
     def sync_media_with_content(self, request, queryset):
         """Sync media items with structured content for selected chapters"""
-        synced_count = 0
-        total_added = 0
+        user_id = request.user.id if request.user.is_authenticated else None
+        task_count = 0
         
         for chapter in queryset:
             try:
-                added = chapter.sync_media_with_content()
-                if added > 0:
-                    synced_count += 1
-                    total_added += added
+                # Start async task
+                task = sync_media_with_content_async.delay(chapter.id, user_id)
+                task_count += 1
             except Exception as e:
                 self.message_user(
                     request, 
-                    f"Error syncing chapter {chapter.title}: {str(e)}", 
+                    f"Error starting sync task for chapter {chapter.title}: {str(e)}", 
                     level=messages.ERROR
                 )
         
-        if total_added > 0:
+        if task_count > 0:
             self.message_user(
                 request, 
-                f"Successfully synced {synced_count} chapters. Added {total_added} media items to structured content."
+                f"Started media sync tasks for {task_count} chapters. Tasks are running in the background."
             )
         else:
             self.message_user(
                 request, 
-                f"No new media items found to sync in {synced_count} chapters."
+                f"No sync tasks were started."
             )
-    sync_media_with_content.short_description = "Sync media with structured content"
+    sync_media_with_content.short_description = "Sync media with structured content (async)"
 
     def rebuild_content_from_media(self, request, queryset):
         """Rebuild structured content from media order for selected chapters"""
-        rebuilt_count = 0
+        user_id = request.user.id if request.user.is_authenticated else None
+        task_count = 0
         
         for chapter in queryset:
             try:
-                elements_count = chapter.rebuild_structured_content_from_media()
-                rebuilt_count += 1
+                # Start async task
+                task = rebuild_structured_content_from_media_async.delay(chapter.id, user_id)
+                task_count += 1
             except Exception as e:
                 self.message_user(
                     request, 
-                    f"Error rebuilding chapter {chapter.title}: {str(e)}", 
+                    f"Error starting rebuild task for chapter {chapter.title}: {str(e)}", 
                     level=messages.ERROR
                 )
         
-        self.message_user(
-            request, 
-            f"Successfully rebuilt structured content for {rebuilt_count} chapters."
-        )
-    rebuild_content_from_media.short_description = "Rebuild content from media order"
+        if task_count > 0:
+            self.message_user(
+                request, 
+                f"Started content rebuild tasks for {task_count} chapters. Tasks are running in the background."
+            )
+        else:
+            self.message_user(
+                request, 
+                f"No rebuild tasks were started."
+            )
+    rebuild_content_from_media.short_description = "Rebuild content from media order (async)"
     
     def get_urls(self):
         """Add custom URLs for quick actions"""
@@ -315,15 +323,40 @@ class ChapterAdmin(admin.ModelAdmin):
         """Sync media with structured content for a single chapter"""
         try:
             chapter = Chapter.objects.get(id=chapter_id)
-            chapter.sync_media_with_content()
+            user_id = request.user.id if request.user.is_authenticated else None
+            
+            # Start async task
+            task = sync_media_with_content_async.delay(chapter.id, user_id)
+            
+            # Check if this is an AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                from django.http import JsonResponse
+                return JsonResponse({
+                    'success': True,
+                    'task_id': task.id,
+                    'message': f"Media sync task started for chapter '{chapter.title}'"
+                })
+            
             messages.success(
                 request,
-                f"Media synchronized with structured content for chapter '{chapter.title}'"
+                f"Media sync task started for chapter '{chapter.title}'. Task ID: {task.id}"
             )
         except Chapter.DoesNotExist:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                from django.http import JsonResponse
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Chapter not found.'
+                })
             messages.error(request, "Chapter not found.")
         except Exception as e:
-            messages.error(request, f"Error synchronizing media: {str(e)}")
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                from django.http import JsonResponse
+                return JsonResponse({
+                    'success': False,
+                    'error': f"Error starting sync task: {str(e)}"
+                })
+            messages.error(request, f"Error starting sync task: {str(e)}")
         
         return redirect('admin:books_chapter_change', chapter_id)
 
@@ -331,15 +364,40 @@ class ChapterAdmin(admin.ModelAdmin):
         """Rebuild structured content from media for a single chapter"""
         try:
             chapter = Chapter.objects.get(id=chapter_id)
-            chapter.rebuild_structured_content_from_media()
+            user_id = request.user.id if request.user.is_authenticated else None
+            
+            # Start async task
+            task = rebuild_structured_content_from_media_async.delay(chapter.id, user_id)
+            
+            # Check if this is an AJAX request
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                from django.http import JsonResponse
+                return JsonResponse({
+                    'success': True,
+                    'task_id': task.id,
+                    'message': f"Content rebuild task started for chapter '{chapter.title}'"
+                })
+            
             messages.success(
                 request,
-                f"Structured content rebuilt from media for chapter '{chapter.title}'"
+                f"Content rebuild task started for chapter '{chapter.title}'. Task ID: {task.id}"
             )
         except Chapter.DoesNotExist:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                from django.http import JsonResponse
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Chapter not found.'
+                })
             messages.error(request, "Chapter not found.")
         except Exception as e:
-            messages.error(request, f"Error rebuilding content: {str(e)}")
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                from django.http import JsonResponse
+                return JsonResponse({
+                    'success': False,
+                    'error': f"Error starting rebuild task: {str(e)}"
+                })
+            messages.error(request, f"Error starting rebuild task: {str(e)}")
         
         return redirect('admin:books_chapter_change', chapter_id)
 

@@ -23,7 +23,7 @@ import difflib
 from django.db import models
 
 from .models import Book, Chapter, Language, ChangeLog
-from .tasks import process_bookfile_async, translate_chapter_async
+from .tasks import process_bookfile_async, translate_chapter_async, sync_media_with_content_async, rebuild_structured_content_from_media_async
 from .forms import BookFileForm, ChapterForm, BookForm, ChapterScheduleForm
 
 logger = logging.getLogger(__name__)
@@ -1656,3 +1656,78 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
         except Exception as e:
             logger.error(f"Error generating diff: {str(e)}")
             return f"Error generating diff: {str(e)}"
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class TaskStatusView(LoginRequiredMixin, View):
+    """View for checking task status via AJAX"""
+    
+    def get(self, request, *args, **kwargs):
+        try:
+            task_id = request.GET.get('task_id')
+            task_type = request.GET.get('task_type')  # 'sync' or 'rebuild'
+            
+            if not task_id:
+                return JsonResponse({
+                    "success": False,
+                    "error": "Task ID is required"
+                })
+            
+            # Import celery result backend
+            from celery.result import AsyncResult
+            
+            # Get task result
+            task_result = AsyncResult(task_id)
+            
+            # Get task status
+            status = task_result.status
+            
+            # Prepare response data
+            response_data = {
+                "success": True,
+                "task_id": task_id,
+                "task_type": task_type,
+                "status": status,
+                "is_pending": status in ['PENDING', 'STARTED'],
+                "is_success": status == 'SUCCESS',
+                "is_failure": status in ['FAILURE', 'REVOKED'],
+                "is_retry": status == 'RETRY'
+            }
+            
+            # Add result data if task is complete
+            if status == 'SUCCESS':
+                result = task_result.result
+                if isinstance(result, dict):
+                    response_data.update({
+                        "result": result,
+                        "message": result.get('message', 'Task completed successfully'),
+                        "chapter_id": result.get('chapter_id'),
+                        "added_count": result.get('added_count'),
+                        "media_count": result.get('media_count'),
+                        "result_count": result.get('result_count')
+                    })
+                else:
+                    response_data.update({
+                        "result": result,
+                        "message": "Task completed successfully"
+                    })
+            elif status == 'FAILURE':
+                response_data.update({
+                    "error": str(task_result.result),
+                    "message": f"Task failed: {str(task_result.result)}"
+                })
+            elif status == 'RETRY':
+                response_data.update({
+                    "message": "Task is being retried",
+                    "retry_count": getattr(task_result, 'retry_count', 0)
+                })
+            
+            return JsonResponse(response_data)
+            
+        except Exception as e:
+            logger.error(f"Error checking task status: {str(e)}")
+            return JsonResponse({
+                "success": False,
+                "error": str(e),
+                "message": f"Error checking task status: {str(e)}"
+            })

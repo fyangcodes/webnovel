@@ -158,14 +158,112 @@
 
         <!-- Chapter Content -->
         <div class="card">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h3 class="card-title mb-0">
                     <i class="fas fa-book-open text-secondary"></i> Content
                 </h3>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-primary active" id="legacyToggle" onclick="toggleContent('legacy')">
+                        <i class="fas fa-file-text"></i> Legacy
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="structuredToggle" onclick="toggleContent('structured')">
+                        <i class="fas fa-code"></i> Structured
+                    </button>
+                </div>
             </div>
             <div class="card-body">
-                <div class="chapter-content" style="font-size: 1.1em; line-height: 1.6;">
+                <!-- Legacy Content -->
+                <div id="legacyContent" class="chapter-content" style="font-size: 1.1em; line-height: 1.6;">
                     {{ chapter.content|linebreaks }}
+                </div>
+                
+                <!-- Structured Content -->
+                <div id="structuredContent" class="chapter-content" style="font-size: 1.1em; line-height: 1.6; display: none;">
+                    {% with structured_content=chapter.get_structured_content %}
+                        {% if structured_content %}
+                            {% for element in structured_content %}
+                                {% if element.type == 'text' %}
+                                    <div class="text-element mb-3">
+                                        {{ element.content|linebreaks }}
+                                    </div>
+                                {% elif element.type == 'image' %}
+                                    <div class="media-element mb-4">
+                                        {% if element.file_path %}
+                                            <img src="{{ element.file_path }}" alt="{{ element.caption|default:'Chapter image' }}" class="img-fluid rounded" style="max-width: 100%; height: auto;">
+                                        {% else %}
+                                            <div class="alert alert-warning">
+                                                <i class="fas fa-exclamation-triangle"></i> Image file not found (ID: {{ element.image_id }})
+                                            </div>
+                                        {% endif %}
+                                        {% if element.caption %}
+                                            <div class="text-center mt-2">
+                                                <small class="text-muted">{{ element.caption }}</small>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                {% elif element.type == 'audio' %}
+                                    <div class="media-element mb-4">
+                                        {% if element.file_path %}
+                                            <audio controls class="w-100">
+                                                <source src="{{ element.file_path }}" type="audio/mpeg">
+                                                Your browser does not support the audio element.
+                                            </audio>
+                                        {% else %}
+                                            <div class="alert alert-warning">
+                                                <i class="fas fa-exclamation-triangle"></i> Audio file not found (ID: {{ element.media_id }})
+                                            </div>
+                                        {% endif %}
+                                        {% if element.caption %}
+                                            <div class="text-center mt-2">
+                                                <small class="text-muted">{{ element.caption }}</small>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                {% elif element.type == 'video' %}
+                                    <div class="media-element mb-4">
+                                        {% if element.file_path %}
+                                            <video controls class="w-100">
+                                                <source src="{{ element.file_path }}" type="video/mp4">
+                                                Your browser does not support the video element.
+                                            </video>
+                                        {% else %}
+                                            <div class="alert alert-warning">
+                                                <i class="fas fa-exclamation-triangle"></i> Video file not found (ID: {{ element.media_id }})
+                                            </div>
+                                        {% endif %}
+                                        {% if element.caption %}
+                                            <div class="text-center mt-2">
+                                                <small class="text-muted">{{ element.caption }}</small>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                {% elif element.type == 'document' %}
+                                    <div class="media-element mb-4">
+                                        {% if element.file_path %}
+                                            <div class="card">
+                                                <div class="card-body text-center">
+                                                    <i class="fas fa-file-pdf fa-3x text-danger mb-2"></i>
+                                                    <h5>Document</h5>
+                                                    <p class="text-muted">{{ element.caption|default:"Chapter document" }}</p>
+                                                    <a href="{{ element.file_path }}" class="btn btn-primary" target="_blank">
+                                                        <i class="fas fa-download"></i> Download Document
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        {% else %}
+                                            <div class="alert alert-warning">
+                                                <i class="fas fa-exclamation-triangle"></i> Document file not found (ID: {{ element.media_id }})
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> No structured content available. Use the admin actions to generate structured content.
+                            </div>
+                        {% endif %}
+                    {% endwith %}
                 </div>
             </div>
         </div>
@@ -294,6 +392,29 @@
 </div>
 
 <script>
+function toggleContent(type) {
+    const legacyContent = document.getElementById('legacyContent');
+    const structuredContent = document.getElementById('structuredContent');
+    const legacyToggle = document.getElementById('legacyToggle');
+    const structuredToggle = document.getElementById('structuredToggle');
+    
+    if (type === 'legacy') {
+        legacyContent.style.display = 'block';
+        structuredContent.style.display = 'none';
+        legacyToggle.classList.remove('btn-outline-primary');
+        legacyToggle.classList.add('btn-primary');
+        structuredToggle.classList.remove('btn-secondary');
+        structuredToggle.classList.add('btn-outline-secondary');
+    } else {
+        legacyContent.style.display = 'none';
+        structuredContent.style.display = 'block';
+        legacyToggle.classList.remove('btn-primary');
+        legacyToggle.classList.add('btn-outline-primary');
+        structuredToggle.classList.remove('btn-outline-secondary');
+        structuredToggle.classList.add('btn-secondary');
+    }
+}
+
 function analyzeChapter() {
     const analyzeBtn = document.getElementById('analyzeBtn');
     const loadingDiv = document.getElementById('analysisLoading');

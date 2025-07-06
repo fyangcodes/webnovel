@@ -220,6 +220,98 @@ def publish_scheduled_chapters_async():
 
 
 @shared_task
+def sync_media_with_content_async(chapter_id, user_id=None):
+    """
+    Asynchronously sync media with structured content for a chapter.
+    This task adds any missing media items to the structured content JSON.
+    """
+    try:
+        from django.contrib.auth import get_user_model
+        
+        # Get the chapter
+        chapter = Chapter.objects.get(id=chapter_id)
+        
+        # Get user if provided
+        user = None
+        if user_id:
+            try:
+                user = get_user_model().objects.get(id=user_id)
+            except:
+                pass
+        
+        logger.info(f"Starting media sync for chapter {chapter_id}")
+        
+        # Perform the sync operation
+        added_count = chapter.sync_media_with_content()
+        
+        logger.info(f"Completed media sync for chapter {chapter_id}. Added {added_count} media items.")
+        
+        return {
+            "success": True,
+            "chapter_id": chapter_id,
+            "added_count": added_count,
+            "message": f"Successfully synced {added_count} media items with structured content"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error syncing media for chapter {chapter_id}: {str(e)}")
+        return {
+            "success": False,
+            "chapter_id": chapter_id,
+            "error": str(e),
+            "message": f"Media sync failed: {str(e)}"
+        }
+
+
+@shared_task
+def rebuild_structured_content_from_media_async(chapter_id, user_id=None):
+    """
+    Asynchronously rebuild structured content from media for a chapter.
+    This task completely rebuilds the structured content JSON from the database media.
+    """
+    try:
+        from django.contrib.auth import get_user_model
+        
+        # Get the chapter
+        chapter = Chapter.objects.get(id=chapter_id)
+        
+        # Get user if provided
+        user = None
+        if user_id:
+            try:
+                user = get_user_model().objects.get(id=user_id)
+            except:
+                pass
+        
+        logger.info(f"Starting structured content rebuild for chapter {chapter_id}")
+        
+        # Get media count for logging
+        media_count = chapter.media.count()
+        
+        # Perform the rebuild operation
+        result_count = chapter.rebuild_structured_content_from_media()
+        
+        logger.info(f"Completed structured content rebuild for chapter {chapter_id}. Result has {result_count} elements.")
+        
+        return {
+            "success": True,
+            "chapter_id": chapter_id,
+            "media_count": media_count,
+            "result_count": result_count,
+            "message": f"Successfully rebuilt structured content with {result_count} elements from {media_count} media items"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error rebuilding structured content for chapter {chapter_id}: {str(e)}")
+        return {
+            "success": False,
+            "chapter_id": chapter_id,
+            "error": str(e),
+            "message": f"Structured content rebuild failed: {str(e)}"
+        }
+
+
+@shared_task
 def schedule_chapter_publishing_async(chapter_id, publish_datetime):
     """Schedule a chapter for publishing at a specific datetime"""
     try:

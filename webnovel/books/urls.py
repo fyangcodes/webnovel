@@ -21,6 +21,7 @@ from .views import (
     ChapterChangelogView,
     ChapterDiffView,
     ChapterVersionCompareView,
+    TaskStatusView,
 )
 
 app_name = "books"
@@ -56,4 +57,7 @@ urlpatterns = [
     
     # Batch processing views
     path("batch-analyze-chapters/", BatchAnalyzeChaptersView.as_view(), name="batch_analyze_chapters"),
+    
+    # Task status views
+    path("task-status/", TaskStatusView.as_view(), name="task_status"),
 ]

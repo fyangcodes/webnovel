@@ -379,19 +379,28 @@ class Chapter(TimeStampedModel):
         book_id = self.book.id
         chapter_id = self.id
         base_dir = f"content/chapters/book_{book_id}"
-        os.makedirs(base_dir, exist_ok=True)
+        
+        # Use Django's storage system to list files
         pattern = re.compile(rf"chapter_{chapter_id}_v(\\d+)\\.json")
+        existing_versions = []
+        
         try:
-            existing_versions = [
-                int(pattern.match(f).group(1))
-                for f in os.listdir(base_dir)
-                if pattern.match(f)
-            ]
-        except FileNotFoundError:
+            # List all files in the directory using Django storage
+            if default_storage.exists(base_dir):
+                directories, files = default_storage.listdir(base_dir)
+                for f in files:
+                    match = pattern.match(f)
+                    if match:
+                        existing_versions.append(int(match.group(1)))
+        except Exception as e:
+            # If there's any error, start with version 0
+            print(f"Warning: Error listing files in {base_dir}: {e}")
             existing_versions = []
+        
         latest_version = max(existing_versions) if existing_versions else 0
         if next_version:
             latest_version += 1
+        
         return f"{base_dir}/chapter_{chapter_id}_v{latest_version}.json"
 
     def save_structured_content(self, structured_content, user=None, summary=""): 
@@ -424,10 +433,17 @@ class Chapter(TimeStampedModel):
         chapter_id = self.id
         base_dir = f"content/chapters/book_{book_id}"
         pattern = re.compile(rf"chapter_{chapter_id}_v(\\d+)\\.json")
+        
         try:
-            files = [f for f in os.listdir(base_dir) if pattern.match(f)]
-        except FileNotFoundError:
+            if default_storage.exists(base_dir):
+                directories, files = default_storage.listdir(base_dir)
+                files = [f for f in files if pattern.match(f)]
+            else:
+                files = []
+        except Exception as e:
+            print(f"Warning: Error listing files in {base_dir}: {e}")
             files = []
+        
         return sorted(files, key=lambda f: int(pattern.match(f).group(1)))
 
     # File-based storage methods
@@ -445,8 +461,17 @@ class Chapter(TimeStampedModel):
 
     def get_structured_content(self):
         """Load structured content from JSON file"""
+        # First try the database path (authoritative source)
+        if self.content_file_path:
+            try:
+                if default_storage.exists(self.content_file_path):
+                    with default_storage.open(self.content_file_path, "r") as f:
+                        return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Fallback to generated path
         file_path = self.get_content_file_path()
-
         try:
             if default_storage.exists(file_path):
                 with default_storage.open(file_path, "r") as f:
@@ -457,23 +482,7 @@ class Chapter(TimeStampedModel):
         # Fallback to legacy content
         return self._parse_legacy_content()
 
-    def save_structured_content(self, structured_content):
-        """Save clean structured content to JSON file"""
-        file_path = self.get_content_file_path()
 
-        # Ensure directory exists
-        directory = os.path.dirname(file_path)
-        if not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-
-        # Save JSON file (this will overwrite if file exists)
-        json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
-        default_storage.save(file_path, ContentFile(json_content.encode("utf-8")))
-
-        # Update model to ensure content_file_path is set
-        if not self.content_file_path or self.content_file_path != file_path:
-            self.content_file_path = file_path
-            self.save(update_fields=["content_file_path"])
 
     # Flexible paragraph parsing methods
     def _parse_legacy_content(self):
@@ -589,7 +598,7 @@ class Chapter(TimeStampedModel):
         else:
             structured_content.insert(position, new_paragraph)
 
-        self.save_structured_content(structured_content)
+        self.save_structured_content(structured_content, summary="Added paragraph to structured content")
 
     def add_image(self, image_id, caption="", position=None):
         """Add an image to the chapter (backward compatibility with ChapterImage)"""
@@ -602,19 +611,29 @@ class Chapter(TimeStampedModel):
         else:
             structured_content.insert(position, new_image)
 
-        self.save_structured_content(structured_content)
+        self.save_structured_content(structured_content, summary="Added image to structured content")
 
     def add_media_to_content(self, media_id, media_type, caption="", position=None):
         """Add media to structured content at position relative to text paragraphs"""
         structured_content = self.get_structured_content()
 
-        # Create media element based on type
+        # Create media element based on type with file path
         if media_type == 'image':
             # For backward compatibility, use image_id for images
             new_media = {"type": "image", "image_id": media_id, "caption": caption}
         else:
             # For new media types, use media_id
             new_media = {"type": media_type, "media_id": media_id, "caption": caption}
+        
+        # Add file path if available
+        try:
+            if media_type == 'image':
+                media_obj = ChapterMedia.objects.get(id=media_id, media_type='image')
+            else:
+                media_obj = ChapterMedia.objects.get(id=media_id, media_type=media_type)
+            new_media["file_path"] = media_obj.file.url if media_obj.file else None
+        except ChapterMedia.DoesNotExist:
+            new_media["file_path"] = None
 
         if position is None:
             # If no position specified, append to end
@@ -638,7 +657,7 @@ class Chapter(TimeStampedModel):
             
             structured_content.insert(insert_index, new_media)
 
-        self.save_structured_content(structured_content)
+        self.save_structured_content(structured_content, summary=f"Added {media_type} media to structured content")
 
     def update_paragraph(self, index, content):
         """Update paragraph content at specific index"""
@@ -649,7 +668,7 @@ class Chapter(TimeStampedModel):
             and structured_content[index]["type"] == "text"
         ):
             structured_content[index]["content"] = content
-            self.save_structured_content(structured_content)
+            self.save_structured_content(structured_content, summary="Updated paragraph in structured content")
             return True
         return False
 
@@ -659,7 +678,7 @@ class Chapter(TimeStampedModel):
 
         if 0 <= index < len(structured_content):
             del structured_content[index]
-            self.save_structured_content(structured_content)
+            self.save_structured_content(structured_content, summary="Deleted element from structured content")
             return True
         return False
 
@@ -669,7 +688,7 @@ class Chapter(TimeStampedModel):
 
         if len(new_order) == len(structured_content):
             reordered_content = [structured_content[i] for i in new_order]
-            self.save_structured_content(reordered_content)
+            self.save_structured_content(reordered_content, summary="Reordered elements in structured content")
             return True
         return False
 
@@ -934,13 +953,23 @@ class Chapter(TimeStampedModel):
         for media in all_media:
             media_key = (media.media_type, media.id)
             if media_key not in existing_media_ids:
-                # Create media element based on type
+                # Create media element based on type with file path
                 if media.media_type == 'image':
                     # For backward compatibility, use image_id for images
-                    media_element = {"type": "image", "image_id": media.id, "caption": media.caption}
+                    media_element = {
+                        "type": "image", 
+                        "image_id": media.id, 
+                        "caption": media.caption,
+                        "file_path": media.file.url if media.file else None
+                    }
                 else:
                     # For new media types, use media_id
-                    media_element = {"type": media.media_type, "media_id": media.id, "caption": media.caption}
+                    media_element = {
+                        "type": media.media_type, 
+                        "media_id": media.id, 
+                        "caption": media.caption,
+                        "file_path": media.file.url if media.file else None
+                    }
                 
                 media_to_add.append((media_element, media.position))
         
@@ -973,8 +1002,8 @@ class Chapter(TimeStampedModel):
                     
                     structured_content.insert(insert_index, media_element)
             
-            # Save the updated structured content once
-            self.save_structured_content(structured_content)
+            # Save the updated structured content once with versioning
+            self.save_structured_content(structured_content, summary="Synced media with structured content")
         
         return len(media_to_add)
 
@@ -998,13 +1027,15 @@ class Chapter(TimeStampedModel):
                 media_element = {
                     "type": "image", 
                     "image_id": media.id, 
-                    "caption": media.caption
+                    "caption": media.caption,
+                    "file_path": media.file.url if media.file else None
                 }
             else:
                 media_element = {
                     "type": media.media_type, 
                     "media_id": media.id, 
-                    "caption": media.caption
+                    "caption": media.caption,
+                    "file_path": media.file.url if media.file else None
                 }
             
             # Insert at relative position (before text paragraph N)
@@ -1029,8 +1060,8 @@ class Chapter(TimeStampedModel):
                 
                 structured_content.insert(insert_index, media_element)
         
-        # Save the rebuilt content
-        self.save_structured_content(structured_content)
+        # Save the rebuilt content with versioning
+        self.save_structured_content(structured_content, summary="Rebuilt structured content from media")
         return len(structured_content)
 
     def get_paragraphs_and_media(self):
@@ -1046,51 +1077,75 @@ class Chapter(TimeStampedModel):
                     'paragraph_number': element.get('paragraph_number', 0)
                 })
             elif element['type'] == 'image':
-                try:
-                    # Try to find in new ChapterMedia first, then fallback to ChapterImage
-                    media = ChapterMedia.objects.filter(
-                        chapter=self, 
-                        media_type='image', 
-                        id=element['image_id']
-                    ).first()
-                    
-                    if not media:
-                        # Fallback to old ChapterImage for backward compatibility
-                        image = ChapterImage.objects.get(id=element['image_id'])
-                        result.append({
-                            'type': 'image',
-                            'media': None,
-                            'image': image,  # Legacy support
-                            'caption': element.get('caption', image.caption),
-                            'position': element.get('position', image.position)
-                        })
-                    else:
-                        result.append({
-                            'type': 'image',
-                            'media': media,
-                            'image': None,
-                            'caption': element.get('caption', media.caption),
-                            'position': element.get('position', media.position)
-                        })
-                except ChapterImage.DoesNotExist:
-                    # Skip if image doesn't exist
-                    continue
+                # Use file path from JSON if available, otherwise fallback to database lookup
+                if element.get('file_path'):
+                    result.append({
+                        'type': 'image',
+                        'media': None,
+                        'image': None,
+                        'caption': element.get('caption', ''),
+                        'position': element.get('position'),
+                        'file_path': element['file_path']
+                    })
+                else:
+                    try:
+                        # Try to find in new ChapterMedia first, then fallback to ChapterImage
+                        media = ChapterMedia.objects.filter(
+                            chapter=self, 
+                            media_type='image', 
+                            id=element['image_id']
+                        ).first()
+                        
+                        if not media:
+                            # Fallback to old ChapterImage for backward compatibility
+                            image = ChapterImage.objects.get(id=element['image_id'])
+                            result.append({
+                                'type': 'image',
+                                'media': None,
+                                'image': image,  # Legacy support
+                                'caption': element.get('caption', image.caption),
+                                'position': element.get('position', image.position),
+                                'file_path': image.image.url if image.image else None
+                            })
+                        else:
+                            result.append({
+                                'type': 'image',
+                                'media': media,
+                                'image': None,
+                                'caption': element.get('caption', media.caption),
+                                'position': element.get('position', media.position),
+                                'file_path': media.file.url if media.file else None
+                            })
+                    except ChapterImage.DoesNotExist:
+                        # Skip if image doesn't exist
+                        continue
             elif element['type'] in ['audio', 'video', 'document']:
-                try:
-                    media = ChapterMedia.objects.get(
-                        chapter=self, 
-                        media_type=element['type'], 
-                        id=element['media_id']
-                    )
+                # Use file path from JSON if available, otherwise fallback to database lookup
+                if element.get('file_path'):
                     result.append({
                         'type': element['type'],
-                        'media': media,
-                        'caption': element.get('caption', media.caption),
-                        'position': element.get('position', media.position)
+                        'media': None,
+                        'caption': element.get('caption', ''),
+                        'position': element.get('position'),
+                        'file_path': element['file_path']
                     })
-                except ChapterMedia.DoesNotExist:
-                    # Skip if media doesn't exist
-                    continue
+                else:
+                    try:
+                        media = ChapterMedia.objects.get(
+                            chapter=self, 
+                            media_type=element['type'], 
+                            id=element['media_id']
+                        )
+                        result.append({
+                            'type': element['type'],
+                            'media': media,
+                            'caption': element.get('caption', media.caption),
+                            'position': element.get('position', media.position),
+                            'file_path': media.file.url if media.file else None
+                        })
+                    except ChapterMedia.DoesNotExist:
+                        # Skip if media doesn't exist
+                        continue
         
         return result
 
