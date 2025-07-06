@@ -1,0 +1,222 @@
+[
+{
+  "model": "books.language",
+  "pk": 1,
+  "fields": {
+    "created_at": "2025-06-29T14:49:41.481Z",
+    "updated_at": "2025-06-29T14:49:41.481Z",
+    "code": "zh",
+    "name": "Chinese",
+    "local_name": "中文"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 2,
+  "fields": {
+    "created_at": "2025-06-29T14:49:48.626Z",
+    "updated_at": "2025-06-29T14:49:48.626Z",
+    "code": "en",
+    "name": "English",
+    "local_name": "English"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 3,
+  "fields": {
+    "created_at": "2025-06-29T14:49:58.466Z",
+    "updated_at": "2025-06-29T14:49:58.466Z",
+    "code": "de",
+    "name": "German",
+    "local_name": "Deutsch"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 4,
+  "fields": {
+    "created_at": "2025-07-06T14:59:41.627Z",
+    "updated_at": "2025-07-06T14:59:41.627Z",
+    "code": "fr",
+    "name": "French",
+    "local_name": "Français"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 5,
+  "fields": {
+    "created_at": "2025-07-06T15:00:04.578Z",
+    "updated_at": "2025-07-06T15:00:04.578Z",
+    "code": "ja",
+    "name": "Japanese",
+    "local_name": "日本語"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 6,
+  "fields": {
+    "created_at": "2025-07-06T15:00:20.101Z",
+    "updated_at": "2025-07-06T15:00:20.101Z",
+    "code": "ko",
+    "name": "Korean",
+    "local_name": "한국어"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 7,
+  "fields": {
+    "created_at": "2025-07-06T15:00:51.998Z",
+    "updated_at": "2025-07-06T15:00:51.998Z",
+    "code": "ru",
+    "name": "Russian",
+    "local_name": "Русский"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 8,
+  "fields": {
+    "created_at": "2025-07-06T15:01:06.672Z",
+    "updated_at": "2025-07-06T15:01:06.672Z",
+    "code": "nl",
+    "name": "Dutch",
+    "local_name": "Nederlands"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 9,
+  "fields": {
+    "created_at": "2025-07-06T15:01:36.174Z",
+    "updated_at": "2025-07-06T15:01:36.174Z",
+    "code": "pl",
+    "name": "Polish",
+    "local_name": "Polski"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 10,
+  "fields": {
+    "created_at": "2025-07-06T15:02:30.376Z",
+    "updated_at": "2025-07-06T15:02:30.376Z",
+    "code": "es",
+    "name": "Spanish",
+    "local_name": "Español"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 11,
+  "fields": {
+    "created_at": "2025-07-06T15:02:40.257Z",
+    "updated_at": "2025-07-06T15:02:40.257Z",
+    "code": "pt",
+    "name": "Portuguese",
+    "local_name": "Português"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 12,
+  "fields": {
+    "created_at": "2025-07-06T15:02:57.129Z",
+    "updated_at": "2025-07-06T15:02:57.129Z",
+    "code": "it",
+    "name": "Italian",
+    "local_name": "Italiano"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 13,
+  "fields": {
+    "created_at": "2025-07-06T15:03:09.554Z",
+    "updated_at": "2025-07-06T15:03:09.554Z",
+    "code": "tr",
+    "name": "Turkish",
+    "local_name": "Türkçe"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 14,
+  "fields": {
+    "created_at": "2025-07-06T15:03:34.949Z",
+    "updated_at": "2025-07-06T15:03:34.949Z",
+    "code": "uk",
+    "name": "Ukrainian",
+    "local_name": "Українська"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 15,
+  "fields": {
+    "created_at": "2025-07-06T15:03:48.895Z",
+    "updated_at": "2025-07-06T15:03:48.895Z",
+    "code": "vi",
+    "name": "Vietnamese",
+    "local_name": "Tiếng Việt"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 16,
+  "fields": {
+    "created_at": "2025-07-06T15:04:04.254Z",
+    "updated_at": "2025-07-06T15:04:04.254Z",
+    "code": "ar",
+    "name": "Arabic",
+    "local_name": "العربية"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 17,
+  "fields": {
+    "created_at": "2025-07-06T15:04:16.142Z",
+    "updated_at": "2025-07-06T15:04:16.142Z",
+    "code": "hi",
+    "name": "Hindi",
+    "local_name": "हिन्दी"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 18,
+  "fields": {
+    "created_at": "2025-07-06T15:04:35.742Z",
+    "updated_at": "2025-07-06T15:04:35.742Z",
+    "code": "id",
+    "name": "Indonesian",
+    "local_name": "Bahasa Indonesia"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 19,
+  "fields": {
+    "created_at": "2025-07-06T15:04:49.340Z",
+    "updated_at": "2025-07-06T15:04:49.340Z",
+    "code": "th",
+    "name": "Thai",
+    "local_name": "ภาษาไทย"
+  }
+},
+{
+  "model": "books.language",
+  "pk": 20,
+  "fields": {
+    "created_at": "2025-07-06T15:05:07.869Z",
+    "updated_at": "2025-07-06T15:05:07.869Z",
+    "code": "fa",
+    "name": "Persian",
+    "local_name": "فارسی"
+  }
+}
+]

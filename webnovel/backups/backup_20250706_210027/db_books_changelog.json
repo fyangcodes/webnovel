@@ -1,0 +1,342 @@
+[
+{
+  "model": "books.changelog",
+  "pk": 1,
+  "fields": {
+    "created_at": "2025-07-06T19:38:42.898Z",
+    "updated_at": "2025-07-06T19:38:42.898Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 1,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 2,
+  "fields": {
+    "created_at": "2025-07-06T19:39:58.838Z",
+    "updated_at": "2025-07-06T19:39:58.838Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 2,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 3,
+  "fields": {
+    "created_at": "2025-07-06T19:44:46.157Z",
+    "updated_at": "2025-07-06T19:44:46.157Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 3,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 4,
+  "fields": {
+    "created_at": "2025-07-06T19:45:39.315Z",
+    "updated_at": "2025-07-06T19:45:39.315Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 4,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 5,
+  "fields": {
+    "created_at": "2025-07-06T19:46:25.963Z",
+    "updated_at": "2025-07-06T19:46:25.964Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 5,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 6,
+  "fields": {
+    "created_at": "2025-07-06T19:46:45.519Z",
+    "updated_at": "2025-07-06T19:46:45.519Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 6,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 7,
+  "fields": {
+    "created_at": "2025-07-06T19:54:03.987Z",
+    "updated_at": "2025-07-06T19:54:03.987Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 7,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 8,
+  "fields": {
+    "created_at": "2025-07-06T19:54:39.807Z",
+    "updated_at": "2025-07-06T19:54:39.807Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 8,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 9,
+  "fields": {
+    "created_at": "2025-07-06T20:02:02.693Z",
+    "updated_at": "2025-07-06T20:02:02.693Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 9,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 10,
+  "fields": {
+    "created_at": "2025-07-06T20:11:51.072Z",
+    "updated_at": "2025-07-06T20:11:51.072Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 10,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 11,
+  "fields": {
+    "created_at": "2025-07-06T20:12:56.848Z",
+    "updated_at": "2025-07-06T20:12:56.848Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 11,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 12,
+  "fields": {
+    "created_at": "2025-07-06T20:14:26.762Z",
+    "updated_at": "2025-07-06T20:14:26.762Z",
+    "content_type": 23,
+    "original_object_id": 2,
+    "changed_object_id": 2,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 1,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 13,
+  "fields": {
+    "created_at": "2025-07-06T20:32:43.100Z",
+    "updated_at": "2025-07-06T20:32:43.100Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 12,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 14,
+  "fields": {
+    "created_at": "2025-07-06T20:32:55.483Z",
+    "updated_at": "2025-07-06T20:32:55.483Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Synced media with structured content",
+    "version": 13,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 15,
+  "fields": {
+    "created_at": "2025-07-06T20:36:00.236Z",
+    "updated_at": "2025-07-06T20:36:00.236Z",
+    "content_type": 23,
+    "original_object_id": 7,
+    "changed_object_id": 7,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Structured content updated",
+    "version": 1,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 16,
+  "fields": {
+    "created_at": "2025-07-06T20:36:15.306Z",
+    "updated_at": "2025-07-06T20:36:15.306Z",
+    "content_type": 23,
+    "original_object_id": 7,
+    "changed_object_id": 7,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Structured content updated",
+    "version": 2,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 17,
+  "fields": {
+    "created_at": "2025-07-06T20:37:58.014Z",
+    "updated_at": "2025-07-06T20:37:58.014Z",
+    "content_type": 23,
+    "original_object_id": 8,
+    "changed_object_id": 8,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 1,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 18,
+  "fields": {
+    "created_at": "2025-07-06T20:38:05.730Z",
+    "updated_at": "2025-07-06T20:38:05.730Z",
+    "content_type": 23,
+    "original_object_id": 8,
+    "changed_object_id": 8,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Rebuilt structured content from media",
+    "version": 2,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 19,
+  "fields": {
+    "created_at": "2025-07-06T20:38:09.524Z",
+    "updated_at": "2025-07-06T20:38:09.524Z",
+    "content_type": 23,
+    "original_object_id": 8,
+    "changed_object_id": 8,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Structured content updated",
+    "version": 3,
+    "diff": ""
+  }
+},
+{
+  "model": "books.changelog",
+  "pk": 20,
+  "fields": {
+    "created_at": "2025-07-06T20:43:20.038Z",
+    "updated_at": "2025-07-06T20:43:20.038Z",
+    "content_type": 23,
+    "original_object_id": 1,
+    "changed_object_id": 1,
+    "user": null,
+    "change_type": "edit",
+    "status": "completed",
+    "notes": "Structured content updated",
+    "version": 14,
+    "diff": ""
+  }
+}
+]

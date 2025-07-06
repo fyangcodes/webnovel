@@ -1,0 +1,12 @@
+{
+  "backup_timestamp": "2025-07-06T21:00:27.275655",
+  "django_version": "5.2.2",
+  "backup_options": {
+    "include_files": true,
+    "skip_db": false,
+    "compress": false,
+    "models": "all"
+  },
+  "storage_backend": "FileSystemStorage",
+  "database_engine": "django.db.backends.sqlite3"
+}
