@@ -1,6 +1,8 @@
 import hashlib
 import json
 import os
+import mimetypes
+import re
 
 from django.conf import settings
 from django.core.validators import FileExtensionValidator, RegexValidator
@@ -19,6 +21,21 @@ unicode_slug_validator = RegexValidator(
     message='Slug can contain any characters except whitespace and /\\?%*:|"<>',
     code="invalid_slug",
 )
+
+# Media type choices for ChapterMedia
+MEDIA_TYPE_CHOICES = [
+    ('image', 'Image'),
+    ('audio', 'Audio'),
+    ('video', 'Video'),
+    ('document', 'Document'),
+    ('other', 'Other'),
+]
+
+# File extension validators for different media types
+IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp']
+AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac']
+VIDEO_EXTENSIONS = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv']
+DOCUMENT_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt']
 
 
 def book_file_upload_to(instance, filename):
@@ -357,19 +374,63 @@ class Chapter(TimeStampedModel):
         # Update book metadata after saving
         self.book.update_metadata()
 
-    # File-based storage methods
-    def get_content_file_path(self):
-        """Generate organized file path for chapter content"""
-        if self.content_file_path:
-            return self.content_file_path
-
+    def get_content_file_path(self, next_version=False):
+        """Return the canonical versioned file path for this chapter's structured content."""
         book_id = self.book.id
         chapter_id = self.id
+        base_dir = f"content/chapters/book_{book_id}"
+        os.makedirs(base_dir, exist_ok=True)
+        pattern = re.compile(rf"chapter_{chapter_id}_v(\\d+)\\.json")
+        try:
+            existing_versions = [
+                int(pattern.match(f).group(1))
+                for f in os.listdir(base_dir)
+                if pattern.match(f)
+            ]
+        except FileNotFoundError:
+            existing_versions = []
+        latest_version = max(existing_versions) if existing_versions else 0
+        if next_version:
+            latest_version += 1
+        return f"{base_dir}/chapter_{chapter_id}_v{latest_version}.json"
 
-        # Create organized path: content/chapters/book_{id}/chapter_{id}.json
-        path = f"content/chapters/book_{book_id}/chapter_{chapter_id}.json"
-        return path
+    def save_structured_content(self, structured_content, user=None, summary=""): 
+        """Save structured content to a new versioned JSON file and log the change."""
+        file_path = self.get_content_file_path(next_version=True)
+        directory = os.path.dirname(file_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
+        default_storage.save(file_path, ContentFile(json_content.encode("utf-8")))
+        self.content_file_path = file_path
+        self.save(update_fields=["content_file_path"])
 
+        # Log the change
+        from .models import ChangeLog
+        ChangeLog.objects.create(
+            content_type=ContentType.objects.get_for_model(self),
+            original_object_id=self.id,
+            changed_object_id=self.id,
+            user=user,
+            change_type="edit",
+            status="completed",
+            notes=summary or "Structured content updated",
+            diff="",  # Optionally add a diff
+        )
+
+    def list_content_versions(self):
+        """List all versioned JSON files for this chapter."""
+        book_id = self.book.id
+        chapter_id = self.id
+        base_dir = f"content/chapters/book_{book_id}"
+        pattern = re.compile(rf"chapter_{chapter_id}_v(\\d+)\\.json")
+        try:
+            files = [f for f in os.listdir(base_dir) if pattern.match(f)]
+        except FileNotFoundError:
+            files = []
+        return sorted(files, key=lambda f: int(pattern.match(f).group(1)))
+
+    # File-based storage methods
     def get_book_content_directory(self):
         """Get the content directory for this book"""
         return f"content/chapters/book_{self.book.id}"
@@ -405,13 +466,14 @@ class Chapter(TimeStampedModel):
         if not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
 
-        # Save JSON file
+        # Save JSON file (this will overwrite if file exists)
         json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
         default_storage.save(file_path, ContentFile(json_content.encode("utf-8")))
 
-        # Update model
-        self.content_file_path = file_path
-        self.save(update_fields=["content_file_path"])
+        # Update model to ensure content_file_path is set
+        if not self.content_file_path or self.content_file_path != file_path:
+            self.content_file_path = file_path
+            self.save(update_fields=["content_file_path"])
 
     # Flexible paragraph parsing methods
     def _parse_legacy_content(self):
@@ -530,7 +592,7 @@ class Chapter(TimeStampedModel):
         self.save_structured_content(structured_content)
 
     def add_image(self, image_id, caption="", position=None):
-        """Add an image to the chapter"""
+        """Add an image to the chapter (backward compatibility with ChapterImage)"""
         structured_content = self.get_structured_content()
 
         new_image = {"type": "image", "image_id": image_id, "caption": caption}
@@ -539,6 +601,42 @@ class Chapter(TimeStampedModel):
             structured_content.append(new_image)
         else:
             structured_content.insert(position, new_image)
+
+        self.save_structured_content(structured_content)
+
+    def add_media_to_content(self, media_id, media_type, caption="", position=None):
+        """Add media to structured content at position relative to text paragraphs"""
+        structured_content = self.get_structured_content()
+
+        # Create media element based on type
+        if media_type == 'image':
+            # For backward compatibility, use image_id for images
+            new_media = {"type": "image", "image_id": media_id, "caption": caption}
+        else:
+            # For new media types, use media_id
+            new_media = {"type": media_type, "media_id": media_id, "caption": caption}
+
+        if position is None:
+            # If no position specified, append to end
+            structured_content.append(new_media)
+        else:
+            # Find the absolute position relative to text paragraphs
+            text_count = 0
+            insert_index = len(structured_content)  # Default to end
+            
+            for i, element in enumerate(structured_content):
+                if element['type'] == 'text':
+                    text_count += 1
+                    if text_count == position:
+                        # Insert before this text paragraph
+                        insert_index = i
+                        break
+                elif text_count == position:
+                    # We've reached the target text position, insert here
+                    insert_index = i
+                    break
+            
+            structured_content.insert(insert_index, new_media)
 
         self.save_structured_content(structured_content)
 
@@ -703,6 +801,299 @@ class Chapter(TimeStampedModel):
         """Get the effective language of this chapter (inherits from book if not specified)"""
         return self.language or self.book.language
 
+    # Media management methods
+    def get_media_by_type(self, media_type):
+        """Get all media of a specific type for this chapter"""
+        return self.media.filter(media_type=media_type).order_by('position')
+
+    def get_images(self):
+        """Get all images for this chapter (backward compatibility)"""
+        return self.get_media_by_type('image')
+
+    def get_audio(self):
+        """Get all audio files for this chapter"""
+        return self.get_media_by_type('audio')
+
+    def get_videos(self):
+        """Get all video files for this chapter"""
+        return self.get_media_by_type('video')
+
+    def get_documents(self):
+        """Get all documents for this chapter"""
+        return self.get_media_by_type('document')
+
+    def add_media(self, file, media_type=None, title="", caption="", position=None):
+        """Add a new media item to this chapter"""
+        if position is None:
+            # Get the next position
+            last_media = self.media.order_by('-position').first()
+            position = (last_media.position + 1) if last_media else 1
+
+        media = ChapterMedia.objects.create(
+            chapter=self,
+            file=file,
+            media_type=media_type,
+            title=title,
+            caption=caption,
+            position=position
+        )
+        
+        # Automatically add to structured content
+        self.add_media_to_content(media.id, media.media_type, media.caption)
+        
+        return media
+
+    def add_image(self, image_file, caption="", alt_text="", position=None):
+        """Add an image to this chapter (backward compatibility)"""
+        media = self.add_media(
+            file=image_file,
+            media_type='image',
+            caption=caption,
+            position=position
+        )
+        media.alt_text = alt_text
+        media.save()
+        return media
+
+    def add_audio(self, audio_file, title="", caption="", duration=None, position=None):
+        """Add an audio file to this chapter"""
+        media = self.add_media(
+            file=audio_file,
+            media_type='audio',
+            title=title,
+            caption=caption,
+            position=position
+        )
+        if duration:
+            media.duration = duration
+            media.save()
+        return media
+
+    def add_video(self, video_file, title="", caption="", duration=None, thumbnail=None, position=None):
+        """Add a video file to this chapter"""
+        media = self.add_media(
+            file=video_file,
+            media_type='video',
+            title=title,
+            caption=caption,
+            position=position
+        )
+        if duration:
+            media.duration = duration
+        if thumbnail:
+            media.thumbnail = thumbnail
+        media.save()
+        return media
+
+    def add_document(self, document_file, title="", caption="", position=None):
+        """Add a document to this chapter"""
+        return self.add_media(
+            file=document_file,
+            media_type='document',
+            title=title,
+            caption=caption,
+            position=position
+        )
+
+    def reorder_media(self, media_ids):
+        """Reorder media items by providing a list of media IDs in desired order"""
+        for position, media_id in enumerate(media_ids, 1):
+            try:
+                media = self.media.get(id=media_id)
+                media.position = position
+                media.save(update_fields=['position'])
+            except ChapterMedia.DoesNotExist:
+                continue
+
+    def get_media_count_by_type(self):
+        """Get count of media items by type"""
+        from django.db.models import Count
+        return self.media.values('media_type').annotate(count=Count('id'))
+
+    @property
+    def total_media_count(self):
+        """Get total number of media items"""
+        return self.media.count()
+
+    def sync_media_with_content(self):
+        """Sync all media items with structured content, adding any that are missing"""
+        structured_content = self.get_structured_content()
+        existing_media_ids = set()
+        
+        # Collect existing media IDs from structured content
+        for element in structured_content:
+            if element['type'] == 'image' and 'image_id' in element:
+                existing_media_ids.add(('image', element['image_id']))
+            elif element['type'] in ['audio', 'video', 'document'] and 'media_id' in element:
+                existing_media_ids.add((element['type'], element['media_id']))
+        
+        # Find media items that are not in structured content
+        all_media = self.media.all()
+        media_to_add = []
+        
+        for media in all_media:
+            media_key = (media.media_type, media.id)
+            if media_key not in existing_media_ids:
+                # Create media element based on type
+                if media.media_type == 'image':
+                    # For backward compatibility, use image_id for images
+                    media_element = {"type": "image", "image_id": media.id, "caption": media.caption}
+                else:
+                    # For new media types, use media_id
+                    media_element = {"type": media.media_type, "media_id": media.id, "caption": media.caption}
+                
+                media_to_add.append((media_element, media.position))
+        
+        # Add all missing media items at once
+        if media_to_add:
+            # Sort by position to ensure proper insertion order
+            media_to_add.sort(key=lambda x: x[1] if x[1] is not None else float('inf'))
+            
+            # Insert media items at their relative positions
+            for media_element, position in media_to_add:
+                if position is None:
+                    # If no position specified, append to end
+                    structured_content.append(media_element)
+                else:
+                    # Find the absolute position relative to text paragraphs
+                    text_count = 0
+                    insert_index = len(structured_content)  # Default to end
+                    
+                    for i, element in enumerate(structured_content):
+                        if element['type'] == 'text':
+                            text_count += 1
+                            if text_count == position:
+                                # Insert before this text paragraph
+                                insert_index = i
+                                break
+                        elif text_count == position:
+                            # We've reached the target text position, insert here
+                            insert_index = i
+                            break
+                    
+                    structured_content.insert(insert_index, media_element)
+            
+            # Save the updated structured content once
+            self.save_structured_content(structured_content)
+        
+        return len(media_to_add)
+
+    def rebuild_structured_content_from_media(self):
+        """Rebuild structured content to match current media order using relative positioning"""
+        # Get all media ordered by position
+        all_media = self.media.order_by('position')
+        
+        # Start with existing text content ONLY (remove any existing media)
+        structured_content = []
+        existing_content = self.get_structured_content()
+        
+        # Add ONLY text elements (filter out any existing media)
+        for element in existing_content:
+            if element['type'] == 'text':
+                structured_content.append(element)
+        
+        # Add ALL media elements from database at their relative positions
+        for media in all_media:
+            if media.media_type == 'image':
+                media_element = {
+                    "type": "image", 
+                    "image_id": media.id, 
+                    "caption": media.caption
+                }
+            else:
+                media_element = {
+                    "type": media.media_type, 
+                    "media_id": media.id, 
+                    "caption": media.caption
+                }
+            
+            # Insert at relative position (before text paragraph N)
+            if media.position is None:
+                structured_content.append(media_element)
+            else:
+                # Find the absolute position relative to text paragraphs
+                text_count = 0
+                insert_index = len(structured_content)  # Default to end
+                
+                for i, element in enumerate(structured_content):
+                    if element['type'] == 'text':
+                        text_count += 1
+                        if text_count == media.position:
+                            # Insert before this text paragraph
+                            insert_index = i
+                            break
+                    elif text_count == media.position:
+                        # We've reached the target text position, insert here
+                        insert_index = i
+                        break
+                
+                structured_content.insert(insert_index, media_element)
+        
+        # Save the rebuilt content
+        self.save_structured_content(structured_content)
+        return len(structured_content)
+
+    def get_paragraphs_and_media(self):
+        """Get paragraphs and media in order as they appear in structured content"""
+        structured_content = self.get_structured_content()
+        result = []
+        
+        for element in structured_content:
+            if element['type'] == 'text':
+                result.append({
+                    'type': 'text',
+                    'content': element['content'],
+                    'paragraph_number': element.get('paragraph_number', 0)
+                })
+            elif element['type'] == 'image':
+                try:
+                    # Try to find in new ChapterMedia first, then fallback to ChapterImage
+                    media = ChapterMedia.objects.filter(
+                        chapter=self, 
+                        media_type='image', 
+                        id=element['image_id']
+                    ).first()
+                    
+                    if not media:
+                        # Fallback to old ChapterImage for backward compatibility
+                        image = ChapterImage.objects.get(id=element['image_id'])
+                        result.append({
+                            'type': 'image',
+                            'media': None,
+                            'image': image,  # Legacy support
+                            'caption': element.get('caption', image.caption),
+                            'position': element.get('position', image.position)
+                        })
+                    else:
+                        result.append({
+                            'type': 'image',
+                            'media': media,
+                            'image': None,
+                            'caption': element.get('caption', media.caption),
+                            'position': element.get('position', media.position)
+                        })
+                except ChapterImage.DoesNotExist:
+                    # Skip if image doesn't exist
+                    continue
+            elif element['type'] in ['audio', 'video', 'document']:
+                try:
+                    media = ChapterMedia.objects.get(
+                        chapter=self, 
+                        media_type=element['type'], 
+                        id=element['media_id']
+                    )
+                    result.append({
+                        'type': element['type'],
+                        'media': media,
+                        'caption': element.get('caption', media.caption),
+                        'position': element.get('position', media.position)
+                    })
+                except ChapterMedia.DoesNotExist:
+                    # Skip if media doesn't exist
+                    continue
+        
+        return result
+
 
 class ChapterImage(models.Model):
     """Stores images organized by book and chapter"""
@@ -713,7 +1104,7 @@ class ChapterImage(models.Model):
     image = models.ImageField(upload_to="chapter_image_upload_to")
     caption = models.TextField(blank=True)
     alt_text = models.CharField(max_length=255, blank=True)
-    position = models.PositiveIntegerField(help_text="Order in chapter")
+    position = models.PositiveIntegerField(help_text="Position relative to text paragraphs (e.g., 1 = before first paragraph)")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def chapter_image_upload_to(instance, filename):
@@ -723,13 +1114,162 @@ class ChapterImage(models.Model):
         ext = filename.split(".")[-1]
 
         # Create organized path: images/book_{id}/chapter_{id}/image_{position}.{ext}
-        return f"images/book_{book_id}/chapter_{chapter_id}/image_{instance.position}.{ext}"
+        return f"images/book_{book_id}/chapter_{id}/image_{instance.position}.{ext}"
 
     class Meta:
         ordering = ["position"]
 
     def __str__(self):
         return f"Image {self.id} in Chapter {self.chapter.id}"
+
+
+class ChapterMedia(TimeStampedModel):
+    """Generalized model for storing various media types organized by book and chapter"""
+
+    chapter = models.ForeignKey(
+        Chapter, on_delete=models.CASCADE, related_name="media"
+    )
+    media_type = models.CharField(
+        max_length=20, 
+        choices=MEDIA_TYPE_CHOICES, 
+        default='image',
+        help_text="Type of media content"
+    )
+    file = models.FileField(
+        upload_to="chapter_media_upload_to",
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=IMAGE_EXTENSIONS + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS + DOCUMENT_EXTENSIONS
+            )
+        ]
+    )
+    title = models.CharField(max_length=255, blank=True, help_text="Title or name of the media")
+    caption = models.TextField(blank=True, help_text="Description or caption")
+    alt_text = models.CharField(max_length=255, blank=True, help_text="Accessibility text")
+    position = models.PositiveIntegerField(help_text="Position relative to text paragraphs (e.g., 1 = before first paragraph)")
+    
+    # Media-specific metadata
+    duration = models.PositiveIntegerField(
+        null=True, 
+        blank=True, 
+        help_text="Duration in seconds (for audio/video)"
+    )
+    file_size = models.PositiveIntegerField(default=0, help_text="File size in bytes")
+    mime_type = models.CharField(max_length=100, blank=True, help_text="MIME type of the file")
+    
+    # Processing status
+    is_processed = models.BooleanField(default=False, help_text="Whether media has been processed")
+    processing_error = models.TextField(blank=True, help_text="Error message if processing failed")
+    
+    # Thumbnail for video/audio (optional)
+    thumbnail = models.ImageField(
+        upload_to="chapter_media_thumbnails/", 
+        blank=True, 
+        null=True,
+        help_text="Thumbnail image for video/audio content"
+    )
+
+    def chapter_media_upload_to(instance, filename):
+        """Generate organized upload path for chapter media"""
+        book_id = instance.chapter.book.id
+        chapter_id = instance.chapter.id
+        media_type = instance.media_type
+        ext = filename.split(".")[-1]
+
+        # Create organized path: media/{type}/book_{id}/chapter_{id}/{type}_{position}.{ext}
+        return f"media/{media_type}/book_{book_id}/chapter_{chapter_id}/{media_type}_{instance.position}.{ext}"
+
+    class Meta:
+        ordering = ["position"]
+        indexes = [
+            models.Index(fields=["chapter", "media_type"]),
+            models.Index(fields=["media_type", "is_processed"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_media_type_display()} {self.id} in Chapter {self.chapter.id}"
+
+    def save(self, *args, **kwargs):
+        # Auto-detect media type from file extension if not set
+        if self.file and not self.media_type:
+            self.media_type = self._detect_media_type()
+        
+        # Set file size and MIME type
+        if self.file:
+            self.file_size = self.file.size
+            self.mime_type = self._get_mime_type()
+        
+        super().save(*args, **kwargs)
+
+    def _detect_media_type(self):
+        """Detect media type from file extension"""
+        if not self.file:
+            return 'other'
+        
+        ext = self.file.name.split('.')[-1].lower()
+        
+        if ext in IMAGE_EXTENSIONS:
+            return 'image'
+        elif ext in AUDIO_EXTENSIONS:
+            return 'audio'
+        elif ext in VIDEO_EXTENSIONS:
+            return 'video'
+        elif ext in DOCUMENT_EXTENSIONS:
+            return 'document'
+        else:
+            return 'other'
+
+    def _get_mime_type(self):
+        """Get MIME type from file extension"""
+        if not self.file:
+            return ''
+        
+        ext = self.file.name.split('.')[-1].lower()
+        mime_type, _ = mimetypes.guess_type(f"file.{ext}")
+        return mime_type or 'application/octet-stream'
+
+    @property
+    def is_image(self):
+        return self.media_type == 'image'
+
+    @property
+    def is_audio(self):
+        return self.media_type == 'audio'
+
+    @property
+    def is_video(self):
+        return self.media_type == 'video'
+
+    @property
+    def is_document(self):
+        return self.media_type == 'document'
+
+    @property
+    def display_title(self):
+        """Get display title (title or filename)"""
+        return self.title or self.file.name.split('/')[-1]
+
+    @property
+    def formatted_duration(self):
+        """Format duration as MM:SS"""
+        if not self.duration:
+            return None
+        
+        minutes = self.duration // 60
+        seconds = self.duration % 60
+        return f"{minutes:02d}:{seconds:02d}"
+
+    @property
+    def formatted_file_size(self):
+        """Format file size in human readable format"""
+        if not self.file_size:
+            return "0 B"
+        
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if self.file_size < 1024.0:
+                return f"{self.file_size:.1f} {unit}"
+            self.file_size /= 1024.0
+        return f"{self.file_size:.1f} TB"
 
 
 class ChangeLog(TimeStampedModel):

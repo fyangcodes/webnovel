@@ -1,0 +1,145 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .structured-content-preview {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 10px 0;
+        font-family: monospace;
+        font-size: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .content-element {
+        margin: 5px 0;
+        padding: 5px;
+        border-left: 3px solid #007bff;
+        background: white;
+    }
+    
+    .content-element.text {
+        border-left-color: #28a745;
+    }
+    
+    .content-element.image {
+        border-left-color: #ffc107;
+    }
+    
+    .element-index {
+        font-weight: bold;
+        color: #6c757d;
+    }
+    
+    .element-type {
+        color: #007bff;
+        font-weight: bold;
+    }
+    
+    .element-content {
+        margin-top: 5px;
+        color: #495057;
+    }
+    
+    .content-stats {
+        display: flex;
+        gap: 20px;
+        margin: 10px 0;
+    }
+    
+    .stat-item {
+        background: #e9ecef;
+        padding: 8px 12px;
+        border-radius: 4px;
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .stat-label {
+        font-size: 12px;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block field_sets %}
+{{ block.super }}
+
+{% if original.pk %}
+<div class="module aligned">
+    <h2>Structured Content Details</h2>
+    
+    <div class="content-stats">
+        <div class="stat-item">
+            <div class="stat-value">{{ original.get_paragraphs|length }}</div>
+            <div class="stat-label">Paragraphs</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ original.images.count }}</div>
+            <div class="stat-label">Images</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ original.get_structured_content|length }}</div>
+            <div class="stat-label">Total Elements</div>
+        </div>
+    </div>
+    
+    <div class="structured-content-preview">
+        <h4>Content Structure Preview:</h4>
+        {% with structured_content=original.get_structured_content %}
+            {% if structured_content %}
+                {% for element in structured_content %}
+                    <div class="content-element {{ element.type }}">
+                        <div>
+                            <span class="element-index">[{{ forloop.counter0 }}]</span>
+                            <span class="element-type">{{ element.type|title }}</span>
+                        </div>
+                        <div class="element-content">
+                            {% if element.type == 'text' %}
+                                {{ element.content|truncatechars:150 }}
+                            {% elif element.type == 'image' %}
+                                Image ID: {{ element.image_id|default:"N/A" }}
+                                {% if element.caption %}
+                                    - {{ element.caption|truncatechars:100 }}
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p>No structured content available. Use the migration action to create structured content.</p>
+            {% endif %}
+        {% endwith %}
+    </div>
+    
+    <div style="margin-top: 15px;">
+        <h4>Quick Actions:</h4>
+        <a href="{% url 'admin:books_chapter_regenerate_structured' original.pk %}" 
+           class="button" 
+           onclick="return confirm('This will regenerate the structured content from the legacy content. Continue?')">
+            Regenerate Structured Content
+        </a>
+        <a href="{% url 'admin:books_chapter_sync_media' original.pk %}" 
+           class="button" 
+           onclick="return confirm('This will add any missing media items to the structured content. Continue?')">
+            Sync Media with Content
+        </a>
+        <a href="{% url 'admin:books_chapter_rebuild_content' original.pk %}" 
+           class="button" 
+           onclick="return confirm('This will rebuild the structured content from media order. Continue?')">
+            Rebuild Content from Media
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %} 
