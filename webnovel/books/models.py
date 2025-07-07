@@ -266,61 +266,11 @@ class Book(TimeStampedModel):
         return f"books/{self.id}/thumbnails"
 
 
-class Chapter(TimeStampedModel):
-    STATUS_CHOICES = [
-        ("draft", "Draft"),
-        ("translating", "Translating"),
-        ("scheduled", "Scheduled"),
-        ("published", "Published"),
-        ("archived", "Archived"),
-        ("private", "Private"),
-        ("error", "Error"),
-    ]
+# --- MIXINS FOR CHAPTER ---
 
-    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
-    title = models.CharField(max_length=255)
-    slug = models.CharField(
-        max_length=255, blank=True, validators=[unicode_slug_validator]
-    )
+
+class StructuredContentMixin(models.Model):
     content = models.TextField()
-    language = models.ForeignKey(
-        Language,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        help_text="Language of this chapter (inherits from book if not specified)",
-    )
-    original_chapter = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="translations",
-        help_text="Original chapter if this is a translation",
-    )
-    chapter_number = AutoIncrementingPositiveIntegerField(scope_field="book")
-    excerpt = models.TextField(max_length=1000, blank=True)
-    abstract = models.TextField(
-        blank=True, help_text="AI-generated summary for translation context"
-    )
-    key_terms = models.JSONField(
-        default=list, blank=True, help_text="Important terms for consistent translation"
-    )
-    word_count = models.PositiveIntegerField(default=0)
-    char_count = models.PositiveIntegerField(default=0)
-    active_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When this chapter should become active/published",
-    )
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="draft",
-        help_text="Chapter status",
-    )
-
-    # New fields for file-based storage and flexible parsing
     content_file_path = models.CharField(
         max_length=255, blank=True, help_text="Path to JSON content file"
     )
@@ -336,118 +286,64 @@ class Chapter(TimeStampedModel):
     )
 
     class Meta:
-        ordering = ["chapter_number"]
-        unique_together = ["book", "chapter_number"]
-        indexes = [
-            models.Index(fields=["book", "chapter_number"]),
-            models.Index(fields=["book", "status"]),
-            models.Index(fields=["language", "status"]),
-            models.Index(fields=["active_at", "status"]),
-        ]
+        abstract = True
 
-    def __str__(self):
-        return f"{self.title}"
-
-    def clean(self):
-        from django.core.exceptions import ValidationError
-
-        if not self.title:
-            raise ValidationError("Title is required")
-        if not self.content:
-            raise ValidationError("Content is required")
-        if self.original_chapter and self.original_chapter == self:
-            raise ValidationError("A chapter cannot be its own original chapter")
-
-        # Validate scheduled publishing
-        if self.status == "scheduled" and not self.active_at:
-            raise ValidationError("Scheduled chapters must have an active_at date")
-        if (
-            self.status == "published"
-            and self.active_at
-            and self.active_at > timezone.now()
-        ):
-            raise ValidationError(
-                "Published chapters cannot have future active_at dates"
-            )
-
-        # Ensure slug is not empty (let Django's SlugField handle format validation)
-        if self.slug and self.slug.strip() == "":
-            raise ValidationError("Slug cannot be empty")
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-
-        # Auto-update status based on active_at
-        if (
-            self.active_at
-            and self.active_at <= timezone.now()
-            and self.status == "scheduled"
-        ):
-            self.status = "published"
-
-        # Always ensure we have a valid slug
-        if not self.slug or self.slug.strip() == "":
-            # Generate slug from title, fallback to chapter number if title is empty
-            if self.title and self.title.strip():
-                self.slug = slugify(self.title, allow_unicode=True)
-            else:
-                # Fallback to chapter number if title is empty
-                self.slug = f"chapter-{self.chapter_number}"
-
-            # Ensure uniqueness per book
-            base_slug = self.slug
-            counter = 1
-            while (
-                Chapter.objects.filter(book=self.book, slug=self.slug)
-                .exclude(pk=self.pk)
-                .exists()
-            ):
-                self.slug = f"{base_slug}-{counter}"
-                counter += 1
-
-        # Set language from book if not specified
-        if not self.language and self.book.language:
-            self.language = self.book.language
-
-        if self.content:
-            self.word_count = len(self.content.split())
-            self.char_count = len(self.content)
-            self.excerpt = self.content[:1000]
-
-        # Save the chapter first
-        super().save(*args, **kwargs)
-
-        # Update book metadata after saving
-        self.book.update_metadata()
-
-    def get_content_file_path(self, next_version=False):
-        """Return the canonical versioned file path for this chapter's structured content."""
+    def get_content_base_directory(self):
+        """Get the base directory for this chapter's content files."""
         book_id = self.book.id
         chapter_id = self.id
-        base_dir = f"books/{book_id}/chapters/{chapter_id}"
+        return f"books/{book_id}/chapters/{chapter_id}"
 
-        # Use Django's storage system to list files
-        pattern = re.compile(rf"content_v(\\d+)\\.json")
-        existing_versions = []
+    def list_content_versions(self):
+        """List all versioned JSON files for this chapter.
+
+        Returns:
+            dict: Dictionary with version numbers as keys and filenames as values.
+                  Example: {0: 'content_v0.json', 1: 'content_v1.json'}
+        """
+        base_dir = self.get_content_base_directory()
+        pattern = re.compile(rf"content_v(\d+)\.json")
 
         try:
-            # List all files in the directory using Django storage
             if default_storage.exists(base_dir):
                 directories, files = default_storage.listdir(base_dir)
+                # Filter and extract version numbers in one pass
+                version_files = {}
                 for f in files:
                     match = pattern.match(f)
                     if match:
-                        existing_versions.append(int(match.group(1)))
+                        version_num = int(match.group(1))
+                        version_files[version_num] = f
+            else:
+                version_files = {}
         except Exception as e:
-            # If there's any error, start with version 0
             print(f"Warning: Error listing files in {base_dir}: {e}")
-            existing_versions = []
+            version_files = {}
 
-        latest_version = max(existing_versions) if existing_versions else 0
+        return version_files
+
+    def get_content_file_path(self, next_version=False):
+        """Return the canonical versioned file path for this chapter's structured content."""
+        base_dir = self.get_content_base_directory()
+
+        # Get existing files as dictionary
+        version_files = self.list_content_versions()
+
+        if not version_files:
+            latest_version = 0
+        else:
+            # Get the highest version number (keys are version numbers)
+            latest_version = max(version_files.keys())
+
         if next_version:
             latest_version += 1
 
         return f"{base_dir}/content_v{latest_version}.json"
+
+    def get_content_file_path_for_version(self, version):
+        """Get the file path for a specific version."""
+        base_dir = self.get_content_base_directory()
+        return f"{base_dir}/content_v{version}.json"
 
     def save_structured_content(self, structured_content, user=None, summary=""):
         """Save structured content to a new versioned JSON file and log the change."""
@@ -461,8 +357,6 @@ class Chapter(TimeStampedModel):
         self.save(update_fields=["content_file_path"])
 
         # Log the change
-        from .models import ChangeLog
-
         ChangeLog.objects.create(
             content_type=ContentType.objects.get_for_model(self),
             original_object_id=self.id,
@@ -474,66 +368,25 @@ class Chapter(TimeStampedModel):
             diff="",  # Optionally add a diff
         )
 
-    def list_content_versions(self):
-        """List all versioned JSON files for this chapter."""
-        book_id = self.book.id
-        chapter_id = self.id
-        base_dir = f"books/{book_id}/chapters/{chapter_id}"
-        pattern = re.compile(rf"content_v(\\d+)\\.json")
-
-        try:
-            if default_storage.exists(base_dir):
-                directories, files = default_storage.listdir(base_dir)
-                files = [f for f in files if pattern.match(f)]
-            else:
-                files = []
-        except Exception as e:
-            print(f"Warning: Error listing files in {base_dir}: {e}")
-            files = []
-
-        return sorted(files, key=lambda f: int(pattern.match(f).group(1)))
-
-    # File-based storage methods
-    def get_book_directory(self):
-        """Get the base directory for this book"""
-        return f"books/{self.book.id}"
-
-    def get_book_content_directory(self):
-        """Get the content directory for this book"""
-        return f"books/{self.book.id}/chapters"
-
-    def get_chapter_directory(self):
-        """Get the directory for this chapter"""
-        return f"books/{self.book.id}/chapters/{self.id}"
-
-    def get_chapter_media_directory(self, media_type):
-        """Get media directory within chapter directory"""
-        return f"books/{self.book.id}/chapters/{self.id}/{media_type}"
-
     def get_structured_content(self):
         """Load structured content from JSON file"""
-        # First try the database path (authoritative source)
-        if self.content_file_path:
-            try:
-                if default_storage.exists(self.content_file_path):
-                    with default_storage.open(self.content_file_path, "r") as f:
-                        return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
+        # Use the database path (authoritative source)
+        if not self.content_file_path:
+            raise FileNotFoundError(f"No content file path set for chapter {self.id}")
 
-        # Fallback to generated path
-        file_path = self.get_content_file_path()
+        if not default_storage.exists(self.content_file_path):
+            raise FileNotFoundError(f"Content file not found: {self.content_file_path}")
+
         try:
-            if default_storage.exists(file_path):
-                with default_storage.open(file_path, "r") as f:
-                    return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
+            with default_storage.open(self.content_file_path, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON in content file {self.content_file_path}: {e}"
+            )
+        except IOError as e:
+            raise IOError(f"Error reading content file {self.content_file_path}: {e}")
 
-        # Fallback to legacy content
-        return self._parse_legacy_content()
-
-    # Flexible paragraph parsing methods
     def _parse_legacy_content(self):
         """Parse legacy content based on paragraph style setting"""
         if self.paragraph_style == "single_newline":
@@ -579,7 +432,6 @@ class Chapter(TimeStampedModel):
         else:
             return self._parse_single_newline()
 
-    # Content access methods
     def get_paragraphs(self):
         """Get paragraphs with calculated numbers"""
         structured_content = self.get_structured_content()
@@ -597,25 +449,6 @@ class Chapter(TimeStampedModel):
 
         return paragraphs
 
-    def get_paragraphs_and_images(self):
-        """Get all content elements with calculated numbers"""
-        structured_content = self.get_structured_content()
-        elements = []
-
-        for i, element in enumerate(structured_content):
-            if element["type"] == "text":
-                elements.append(
-                    {
-                        **element,
-                        "paragraph_number": i + 1,  # Calculate from array index
-                        "array_index": i,
-                    }
-                )
-            else:
-                elements.append({**element, "array_index": i})
-
-        return elements
-
     def get_paragraph_by_number(self, paragraph_number):
         """Get specific paragraph by number"""
         paragraphs = self.get_paragraphs()
@@ -624,18 +457,6 @@ class Chapter(TimeStampedModel):
                 return paragraph
         return None
 
-    def get_element_by_index(self, index):
-        """Get element by array index"""
-        structured_content = self.get_structured_content()
-        if 0 <= index < len(structured_content):
-            element = structured_content[index]
-            if element["type"] == "paragraph":
-                return {**element, "paragraph_number": index + 1, "array_index": index}
-            else:
-                return {**element, "array_index": index}
-        return None
-
-    # Content manipulation methods
     def add_paragraph(self, content, position=None):
         """Add a new paragraph to the chapter"""
         structured_content = self.get_structured_content()
@@ -651,20 +472,60 @@ class Chapter(TimeStampedModel):
             structured_content, summary="Added paragraph to structured content"
         )
 
-    def add_image(self, image_id, caption="", position=None):
-        """Add an image to the chapter (legacy method - use add_media_to_content instead)"""
+    def update_paragraph(self, index, content):
+        """Update paragraph content at specific index"""
         structured_content = self.get_structured_content()
 
-        new_image = {"type": "image", "image_id": image_id, "caption": caption}
+        if (
+            0 <= index < len(structured_content)
+            and structured_content[index]["type"] == "text"
+        ):
+            structured_content[index]["content"] = content
+            self.save_structured_content(
+                structured_content, summary="Updated paragraph in structured content"
+            )
+            return True
+        return False
 
-        if position is None:
-            structured_content.append(new_image)
-        else:
-            structured_content.insert(position, new_image)
+    def delete_element(self, index):
+        """Delete element at specific index"""
+        structured_content = self.get_structured_content()
 
-        self.save_structured_content(
-            structured_content, summary="Added image to structured content"
-        )
+        if 0 <= index < len(structured_content):
+            del structured_content[index]
+            self.save_structured_content(
+                structured_content, summary="Deleted element from structured content"
+            )
+            return True
+        return False
+
+    def reorder_elements(self, new_order):
+        """Reorder elements based on new index order"""
+        structured_content = self.get_structured_content()
+
+        if len(new_order) == len(structured_content):
+            reordered_content = [structured_content[i] for i in new_order]
+            self.save_structured_content(
+                reordered_content, summary="Reordered elements in structured content"
+            )
+            return True
+        return False
+
+    def get_element_by_index(self, index):
+        """Get element by array index"""
+        structured_content = self.get_structured_content()
+        if 0 <= index < len(structured_content):
+            element = structured_content[index]
+            if element["type"] == "paragraph":
+                return {**element, "paragraph_number": index + 1, "array_index": index}
+            else:
+                return {**element, "array_index": index}
+        return None
+
+
+class StructuredContentMediaMixin(StructuredContentMixin):
+    class Meta:
+        abstract = True
 
     def add_media_to_content(self, media_id, media_type, caption="", position=None):
         """Add media to structured content at position relative to text paragraphs"""
@@ -715,174 +576,6 @@ class Chapter(TimeStampedModel):
             summary=f"Added {media_type} media to structured content",
         )
 
-    def update_paragraph(self, index, content):
-        """Update paragraph content at specific index"""
-        structured_content = self.get_structured_content()
-
-        if (
-            0 <= index < len(structured_content)
-            and structured_content[index]["type"] == "text"
-        ):
-            structured_content[index]["content"] = content
-            self.save_structured_content(
-                structured_content, summary="Updated paragraph in structured content"
-            )
-            return True
-        return False
-
-    def delete_element(self, index):
-        """Delete element at specific index"""
-        structured_content = self.get_structured_content()
-
-        if 0 <= index < len(structured_content):
-            del structured_content[index]
-            self.save_structured_content(
-                structured_content, summary="Deleted element from structured content"
-            )
-            return True
-        return False
-
-    def reorder_elements(self, new_order):
-        """Reorder elements based on new index order"""
-        structured_content = self.get_structured_content()
-
-        if len(new_order) == len(structured_content):
-            reordered_content = [structured_content[i] for i in new_order]
-            self.save_structured_content(
-                reordered_content, summary="Reordered elements in structured content"
-            )
-            return True
-        return False
-
-    @property
-    def is_active(self):
-        """Returns True if the chapter is currently active (published and past active_at)"""
-        if self.status != "published":
-            return False
-        if self.active_at:
-            return self.active_at <= timezone.now()
-        return True
-
-    @property
-    def is_published(self):
-        return self.status == "published"
-
-    @property
-    def is_scheduled(self):
-        return self.status == "scheduled"
-
-    @property
-    def is_draft(self):
-        return self.status == "draft"
-
-    @property
-    def scheduled_for(self):
-        """Returns the scheduled date if this chapter is scheduled for publishing"""
-        if self.status == "scheduled" and self.active_at:
-            return self.active_at
-        return None
-
-    @property
-    def time_until_publish(self):
-        """Returns time remaining until publication (for scheduled chapters)"""
-        if self.status == "scheduled" and self.active_at:
-            remaining = self.active_at - timezone.now()
-            return remaining if remaining.total_seconds() > 0 else None
-        return None
-
-    def schedule_for_publishing(self, publish_datetime):
-        """Schedule this chapter for publishing at a specific datetime"""
-        if publish_datetime <= timezone.now():
-            raise ValueError("Publish datetime must be in the future")
-
-        # Ensure slug is valid before scheduling
-        if not self.slug or self.slug.strip() == "":
-            if self.title and self.title.strip():
-                self.slug = slugify(self.title, allow_unicode=True)
-            else:
-                self.slug = f"chapter-{self.chapter_number}"
-
-            # Ensure uniqueness per book
-            base_slug = self.slug
-            counter = 1
-            while (
-                Chapter.objects.filter(book=self.book, slug=self.slug)
-                .exclude(pk=self.pk)
-                .exists()
-            ):
-                self.slug = f"{base_slug}-{counter}"
-                counter += 1
-
-        self.active_at = publish_datetime
-        self.status = "scheduled"
-        self.save()
-
-    def publish_now(self):
-        """Publish this chapter immediately"""
-        # Ensure slug is valid before publishing
-        if not self.slug or self.slug.strip() == "":
-            if self.title and self.title.strip():
-                self.slug = slugify(self.title, allow_unicode=True)
-            else:
-                self.slug = f"chapter-{self.chapter_number}"
-
-            # Ensure uniqueness per book
-            base_slug = self.slug
-            counter = 1
-            while (
-                Chapter.objects.filter(book=self.book, slug=self.slug)
-                .exclude(pk=self.pk)
-                .exists()
-            ):
-                self.slug = f"{base_slug}-{counter}"
-                counter += 1
-
-        self.status = "published"
-        self.active_at = timezone.now()
-        self.save()
-
-    def unpublish(self):
-        """Unpublish this chapter"""
-        self.status = "draft"
-        self.active_at = None
-        self.save()
-
-    @classmethod
-    def get_published_chapters(cls, book=None):
-        """Get all published chapters, optionally filtered by book"""
-        queryset = cls.objects.filter(status="published")
-        if book:
-            queryset = queryset.filter(book=book)
-        return queryset.filter(
-            models.Q(active_at__isnull=True) | models.Q(active_at__lte=timezone.now())
-        )
-
-    @classmethod
-    def get_scheduled_chapters(cls, book=None):
-        """Get all scheduled chapters, optionally filtered by book"""
-        queryset = cls.objects.filter(status="scheduled")
-        if book:
-            queryset = queryset.filter(book=book)
-        return queryset.filter(active_at__gt=timezone.now())
-
-    def has_translations(self):
-        """Check if this chapter has translations"""
-        return self.translations.exists()
-
-    def get_translation(self, language):
-        """
-        Returns the translated chapter in the specified language.
-        Accepts either a Language instance or a language code (str).
-        """
-        if isinstance(language, str):
-            return self.translations.filter(language__code=language).first()
-        return self.translations.filter(language=language).first()
-
-    def get_effective_language(self):
-        """Get the effective language of this chapter (inherits from book if not specified)"""
-        return self.language or self.book.language
-
-    # Media management methods
     def get_media_by_type(self, media_type):
         """Get all media of a specific type for this chapter"""
         return self.media.filter(media_type=media_type).order_by("position")
@@ -1223,6 +916,239 @@ class Chapter(TimeStampedModel):
                         continue
 
         return result
+
+
+class SchedulableMixin(models.Model):
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("draft", "Draft"),
+            ("translating", "Translating"),
+            ("scheduled", "Scheduled"),
+            ("published", "Published"),
+            ("archived", "Archived"),
+            ("private", "Private"),
+            ("error", "Error"),
+        ],
+        default="draft",
+        help_text="Chapter status",
+    )
+    active_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When this chapter should become active/published",
+    )
+
+    class Meta:
+        abstract = True
+
+    @property
+    def is_active(self):
+        """Returns True if the chapter is currently active (published and past active_at)"""
+        if self.status != "published":
+            return False
+        if self.active_at:
+            return self.active_at <= timezone.now()
+        return True
+
+    @property
+    def is_published(self):
+        return self.status == "published"
+
+    @property
+    def is_scheduled(self):
+        return self.status == "scheduled"
+
+    @property
+    def is_draft(self):
+        return self.status == "draft"
+
+    @property
+    def scheduled_for(self):
+        """Returns the scheduled date if this chapter is scheduled for publishing"""
+        if self.status == "scheduled" and self.active_at:
+            return self.active_at
+        return None
+
+    @property
+    def time_until_publish(self):
+        """Returns time remaining until publication (for scheduled chapters)"""
+        if self.status == "scheduled" and self.active_at:
+            remaining = self.active_at - timezone.now()
+            return remaining if remaining.total_seconds() > 0 else None
+        return None
+
+    def schedule_for_publishing(self, publish_datetime):
+        """Schedule this chapter for publishing at a specific datetime"""
+        if publish_datetime <= timezone.now():
+            raise ValueError("Publish datetime must be in the future")
+
+        # Ensure slug is valid before scheduling
+        if not self.slug or self.slug.strip() == "":
+            if self.title and self.title.strip():
+                self.slug = slugify(self.title, allow_unicode=True)
+            else:
+                self.slug = f"chapter-{self.chapter_number}"
+
+            # Ensure uniqueness per book
+            base_slug = self.slug
+            counter = 1
+            while (
+                Chapter.objects.filter(book=self.book, slug=self.slug)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                self.slug = f"{base_slug}-{counter}"
+                counter += 1
+
+        self.active_at = publish_datetime
+        self.status = "scheduled"
+        self.save()
+
+    def publish_now(self):
+        """Publish this chapter immediately"""
+        # Ensure slug is valid before publishing
+        if not self.slug or self.slug.strip() == "":
+            if self.title and self.title.strip():
+                self.slug = slugify(self.title, allow_unicode=True)
+            else:
+                self.slug = f"chapter-{self.chapter_number}"
+
+            # Ensure uniqueness per book
+            base_slug = self.slug
+            counter = 1
+            while (
+                Chapter.objects.filter(book=self.book, slug=self.slug)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                self.slug = f"{base_slug}-{counter}"
+                counter += 1
+
+        self.status = "published"
+        self.active_at = timezone.now()
+        self.save()
+
+    def unpublish(self):
+        """Unpublish this chapter"""
+        self.status = "draft"
+        self.active_at = None
+        self.save()
+
+    @classmethod
+    def get_published_chapters(cls, book=None):
+        """Get all published chapters, optionally filtered by book"""
+        queryset = cls.objects.filter(status="published")
+        if book:
+            queryset = queryset.filter(book=book)
+        return queryset.filter(
+            models.Q(active_at__isnull=True) | models.Q(active_at__lte=timezone.now())
+        )
+
+    @classmethod
+    def get_scheduled_chapters(cls, book=None):
+        """Get all scheduled chapters, optionally filtered by book"""
+        queryset = cls.objects.filter(status="scheduled")
+        if book:
+            queryset = queryset.filter(book=book)
+        return queryset.filter(active_at__gt=timezone.now())
+
+    def has_translations(self):
+        """Check if this chapter has translations"""
+        return self.translations.exists()
+
+    def get_translation(self, language):
+        """
+        Returns the translated chapter in the specified language.
+        Accepts either a Language instance or a language code (str).
+        """
+        if isinstance(language, str):
+            return self.translations.filter(language__code=language).first()
+        return self.translations.filter(language=language).first()
+
+    def get_effective_language(self):
+        """Get the effective language of this chapter (inherits from book if not specified)"""
+        return self.language or self.book.language
+
+
+# Refactored Chapter model
+class Chapter(
+    TimeStampedModel, StructuredContentMediaMixin, SchedulableMixin
+):
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
+    title = models.CharField(max_length=255)
+    slug = models.CharField(
+        max_length=255, blank=True, validators=[unicode_slug_validator]
+    )
+    language = models.ForeignKey(
+        Language,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Language of this chapter (inherits from book if not specified)",
+    )
+    original_chapter = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="translations",
+        help_text="Original chapter if this is a translation",
+    )
+    chapter_number = AutoIncrementingPositiveIntegerField(scope_field="book")
+    excerpt = models.TextField(max_length=1000, blank=True)
+    abstract = models.TextField(
+        blank=True, help_text="AI-generated summary for translation context"
+    )
+    key_terms = models.JSONField(
+        default=list, blank=True, help_text="Important terms for consistent translation"
+    )
+    word_count = models.PositiveIntegerField(default=0)
+    char_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["chapter_number"]
+        unique_together = ["book", "chapter_number"]
+        indexes = [
+            models.Index(fields=["book", "chapter_number"]),
+            models.Index(fields=["book", "status"]),
+            models.Index(fields=["language", "status"]),
+            models.Index(fields=["active_at", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if not self.title:
+            raise ValidationError("Title is required")
+        if not self.content:
+            raise ValidationError("Content is required")
+        if self.original_chapter and self.original_chapter == self:
+            raise ValidationError("A chapter cannot be its own original chapter")
+
+        # Validate scheduled publishing
+        if self.status == "scheduled" and not self.active_at:
+            raise ValidationError("Scheduled chapters must have an active_at date")
+        if (
+            self.status == "published"
+            and self.active_at
+            and self.active_at > timezone.now()
+        ):
+            raise ValidationError(
+                "Published chapters cannot have future active_at dates"
+            )
+
+        # Ensure slug is not empty (let Django's SlugField handle format validation)
+        if self.slug and self.slug.strip() == "":
+            raise ValidationError("Slug cannot be empty")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        # ... keep only logic not covered by mixins ...
+        super().save(*args, **kwargs)
 
 
 class ChapterMedia(TimeStampedModel):
