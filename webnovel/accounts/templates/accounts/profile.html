@@ -12,16 +12,8 @@
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col-md-3 text-center">
-                            {% if user.avatar %}
-                                <img src="{{ user.avatar.url }}" alt="{{ user.display_name }}" 
-                                     class="rounded-circle img-fluid" style="max-width: 150px;">
-                            {% elif user.avatar_thumbnail %}
-                                <img src="{{ user.avatar_thumbnail.url }}" alt="{{ user.display_name }}" 
-                                     class="rounded-circle img-fluid" style="max-width: 150px;">
-                            {% else %}
-                                <img src="{% static 'images/default-avatar.png' %}" alt="Default Avatar" 
-                                     class="rounded-circle img-fluid" style="max-width: 150px;">
-                            {% endif %}
+                            <img src="{{ user.get_avatar_url }}" alt="{{ user.display_name }}" 
+                                 class="rounded-circle img-fluid" style="max-width: 150px;">
                         </div>
                         <div class="col-md-9">
                             <h2 class="card-title">{{ user.display_name }}</h2>
@@ -146,9 +138,7 @@
                         {% for book in books|slice:":6" %}
                         <div class="col-md-4 mb-3">
                             <div class="card h-100">
-                                {% if book.cover_image %}
-                                    <img src="{{ book.cover_image.url }}" class="card-img-top" alt="{{ book.title }}" style="height: 200px; object-fit: cover;">
-                                {% endif %}
+                                <img src="{{ book.get_cover_image_url }}" class="card-img-top" alt="{{ book.title }}" style="height: 200px; object-fit: cover;">
                                 <div class="card-body">
                                     <h6 class="card-title">{{ book.title }}</h6>
                                     <p class="card-text small text-muted">

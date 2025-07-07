@@ -14,18 +14,8 @@
         <div class="col-md-4">
             <div class="card mb-4">
                 <div class="card-body text-center">
-                    {% if target_user.avatar %}
-                    <img src="{{ target_user.avatar.url }}" alt="{{ target_user.display_name }}"
+                    <img src="{{ target_user.get_avatar_url }}" alt="{{ target_user.display_name }}"
                         class="rounded-circle img-fluid mb-3" style="max-width: 120px;">
-                    {% elif target_user.avatar_thumbnail %}
-                    <img src="{{ target_user.avatar_thumbnail.url }}" alt="{{ target_user.display_name }}"
-                        class="rounded-circle img-fluid mb-3" style="max-width: 120px;">
-                    {% else %}
-                    <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center mb-3"
-                        style="width: 120px; height: 120px;">
-                        <i class="fas fa-user fa-3x text-white"></i>
-                    </div>
-                    {% endif %}
                     <h3>{{ target_user.display_name }}</h3>
                     <p class="text-muted">@{{ target_user.username }}</p>
                     <p>{{ target_user.email }}</p>

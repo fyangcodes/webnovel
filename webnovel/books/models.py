@@ -51,6 +51,7 @@ from django.utils import timezone
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.utils.text import slugify
+from django.templatetags.static import static
 from .fields import AutoIncrementingPositiveIntegerField
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -161,7 +162,9 @@ class Book(TimeStampedModel):
     )
     isbn = models.CharField(max_length=20, blank=True, null=True)
     description = models.TextField(blank=True)
-    cover_image = models.ImageField(upload_to="book_covers/", blank=True, null=True)
+    cover_image = models.ImageField(
+        upload_to="book_cover_upload_to", blank=True, null=True
+    )
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -265,6 +268,33 @@ class Book(TimeStampedModel):
         """Get the directory for book thumbnails"""
         return f"books/{self.id}/thumbnails"
 
+    @staticmethod
+    def book_cover_upload_to(instance, filename):
+        """Generate upload path for book cover images"""
+        return f"{instance.get_book_directory()}/cover/{filename}"
+
+    def get_cover_image_url(self, fallback_to_default=True):
+        """Get the cover image URL with a fallback to the default image"""
+        if self.cover_image:
+            return self.cover_image.url
+        elif fallback_to_default:
+            return static("images/default_book_cover.png")
+        else:
+            return None
+
+    @property
+    def has_custom_cover(self):
+        """Check if the book has a custom cover image (not the default)"""
+        return bool(self.cover_image)
+
+    def get_cover_image_data(self):
+        """Get cover image data as a dictionary for API responses"""
+        return {
+            'url': self.get_cover_image_url(),
+            'is_default': not self.has_custom_cover,
+            'custom_image_url': self.cover_image.url if self.cover_image else None,
+        }
+
 
 # --- MIXINS FOR CHAPTER ---
 
@@ -348,9 +378,8 @@ class StructuredContentMixin(models.Model):
     def save_structured_content(self, structured_content, user=None, summary=""):
         """Save structured content to a new versioned JSON file and log the change."""
         file_path = self.get_content_file_path(next_version=True)
-        directory = os.path.dirname(file_path)
-        if not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
+
+        # Let Django's storage handle directory creation
         json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
         default_storage.save(file_path, ContentFile(json_content.encode("utf-8")))
         self.content_file_path = file_path
@@ -372,20 +401,16 @@ class StructuredContentMixin(models.Model):
         """Load structured content from JSON file"""
         # Use the database path (authoritative source)
         if not self.content_file_path:
-            raise FileNotFoundError(f"No content file path set for chapter {self.id}")
+            return []  # Return empty list as fallback
 
         if not default_storage.exists(self.content_file_path):
-            raise FileNotFoundError(f"Content file not found: {self.content_file_path}")
+            return []  # Return empty list as fallback
 
         try:
             with default_storage.open(self.content_file_path, "r") as f:
                 return json.load(f)
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Invalid JSON in content file {self.content_file_path}: {e}"
-            )
-        except IOError as e:
-            raise IOError(f"Error reading content file {self.content_file_path}: {e}")
+        except (json.JSONDecodeError, IOError):
+            return []  # Return empty list as fallback
 
     def _parse_legacy_content(self):
         """Parse legacy content based on paragraph style setting"""
@@ -487,40 +512,15 @@ class StructuredContentMixin(models.Model):
             return True
         return False
 
-    def delete_element(self, index):
-        """Delete element at specific index"""
+    def delete_paragraph(self, index):
+        """Delete paragraph at specific index"""
         structured_content = self.get_structured_content()
-
         if 0 <= index < len(structured_content):
             del structured_content[index]
             self.save_structured_content(
-                structured_content, summary="Deleted element from structured content"
+                structured_content, summary="Deleted paragraph from structured content"
             )
             return True
-        return False
-
-    def reorder_elements(self, new_order):
-        """Reorder elements based on new index order"""
-        structured_content = self.get_structured_content()
-
-        if len(new_order) == len(structured_content):
-            reordered_content = [structured_content[i] for i in new_order]
-            self.save_structured_content(
-                reordered_content, summary="Reordered elements in structured content"
-            )
-            return True
-        return False
-
-    def get_element_by_index(self, index):
-        """Get element by array index"""
-        structured_content = self.get_structured_content()
-        if 0 <= index < len(structured_content):
-            element = structured_content[index]
-            if element["type"] == "paragraph":
-                return {**element, "paragraph_number": index + 1, "array_index": index}
-            else:
-                return {**element, "array_index": index}
-        return None
 
 
 class StructuredContentMediaMixin(StructuredContentMixin):
@@ -689,6 +689,41 @@ class StructuredContentMediaMixin(StructuredContentMixin):
         from django.db.models import Count
 
         return self.media.values("media_type").annotate(count=Count("id"))
+
+    def delete_element(self, index):
+        """Delete element at specific index"""
+        structured_content = self.get_structured_content()
+
+        if 0 <= index < len(structured_content):
+            del structured_content[index]
+            self.save_structured_content(
+                structured_content, summary="Deleted element from structured content"
+            )
+            return True
+        return False
+
+    def reorder_elements(self, new_order):
+        """Reorder elements based on new index order"""
+        structured_content = self.get_structured_content()
+
+        if len(new_order) == len(structured_content):
+            reordered_content = [structured_content[i] for i in new_order]
+            self.save_structured_content(
+                reordered_content, summary="Reordered elements in structured content"
+            )
+            return True
+        return False
+
+    def get_element_by_index(self, index):
+        """Get element by array index"""
+        structured_content = self.get_structured_content()
+        if 0 <= index < len(structured_content):
+            element = structured_content[index]
+            if element["type"] == "paragraph":
+                return {**element, "paragraph_number": index + 1, "array_index": index}
+            else:
+                return {**element, "array_index": index}
+        return None
 
     @property
     def total_media_count(self):
@@ -1072,9 +1107,7 @@ class SchedulableMixin(models.Model):
 
 
 # Refactored Chapter model
-class Chapter(
-    TimeStampedModel, StructuredContentMediaMixin, SchedulableMixin
-):
+class Chapter(TimeStampedModel, StructuredContentMediaMixin, SchedulableMixin):
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     title = models.CharField(max_length=255)
     slug = models.CharField(
@@ -1448,3 +1481,8 @@ class BookFile(TimeStampedModel):
     @property
     def is_failed(self):
         return self.status == "failed"
+
+
+def get_default_book_cover_url():
+    """Get the URL for the default book cover image"""
+    return static("images/default_book_cover.png")

@@ -63,12 +63,10 @@ class CustomUserAdmin(UserAdmin):
     display_name.short_description = 'Display Name'
     
     def avatar_preview(self, obj):
-        if obj.avatar:
-            return format_html(
-                '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
-                obj.avatar.url
-            )
-        return "No avatar"
+        return format_html(
+            '<img src="{}" style="max-height: 50px; max-width: 50px;" />',
+            obj.get_avatar_url()
+        )
     avatar_preview.short_description = 'Avatar'
 
 

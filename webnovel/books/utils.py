@@ -9,6 +9,9 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 
 from django.core.exceptions import ValidationError
+from django.templatetags.static import static
+from .models import Book
+from accounts.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -193,3 +196,71 @@ class TextExtractor:
 def extract_text_from_file(uploaded_file):
     """Main function to extract text from uploaded file"""
     return TextExtractor.extract_text_from_file(uploaded_file.path)
+
+
+def get_default_book_cover_url():
+    """Get the URL for the default book cover image"""
+    return static("images/default_book_cover.png")
+
+
+def get_book_cover_url(book):
+    """Get the cover image URL for a book with fallback to default"""
+    if not isinstance(book, Book):
+        return get_default_book_cover_url()
+    return book.get_cover_image_url()
+
+
+def get_book_cover_data(book):
+    """Get comprehensive cover image data for a book"""
+    if not isinstance(book, Book):
+        return {
+            'url': get_default_book_cover_url(),
+            'is_default': True,
+            'custom_image_url': None,
+        }
+    return book.get_cover_image_data()
+
+
+def format_book_cover_for_display(book, width=300, height=400):
+    """Format book cover for display with specific dimensions"""
+    cover_data = get_book_cover_data(book)
+    return {
+        'url': cover_data['url'],
+        'alt_text': f"Cover for {book.title}" if hasattr(book, 'title') else "Book cover",
+        'width': width,
+        'height': height,
+        'is_default': cover_data['is_default'],
+    }
+
+
+# User Avatar Utility Functions
+def get_default_user_avatar_url():
+    """Get the URL for the default user avatar image"""
+    return static("images/default_user_avatar.png")
+
+
+def get_user_avatar_url(user):
+    """Get the avatar URL for a user with fallback to default"""
+    if not isinstance(user, User):
+        return get_default_user_avatar_url()
+    return user.get_avatar_url()
+
+
+def get_user_avatar_thumbnail_url(user):
+    """Get the avatar thumbnail URL for a user with fallback to default"""
+    if not isinstance(user, User):
+        return get_default_user_avatar_url()
+    return user.get_avatar_thumbnail_url()
+
+
+def get_user_avatar_data(user):
+    """Get comprehensive avatar data for a user"""
+    if not isinstance(user, User):
+        return {
+            'url': get_default_user_avatar_url(),
+            'thumbnail_url': get_default_user_avatar_url(),
+            'is_default': True,
+            'custom_avatar_url': None,
+            'custom_thumbnail_url': None,
+        }
+    return user.get_avatar_data()

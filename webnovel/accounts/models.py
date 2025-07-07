@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.conf import settings
+from django.templatetags.static import static
 from imagekit.models import ProcessedImageField
 from imagekit.processors import ResizeToFill, Thumbnail
 
@@ -106,6 +107,41 @@ class User(AbstractUser):
             "admin": "Administrator",
         }
         return role_names.get(self.role, self.role.title())
+
+    def get_avatar_url(self, fallback_to_default=True):
+        """Get the avatar URL with a fallback to the default avatar"""
+        if self.avatar:
+            return self.avatar.url
+        elif fallback_to_default:
+            return static("images/default_user_avatar.png")
+        else:
+            return None
+
+    def get_avatar_thumbnail_url(self, fallback_to_default=True):
+        """Get the avatar thumbnail URL with a fallback to the default avatar"""
+        if self.avatar_thumbnail:
+            return self.avatar_thumbnail.url
+        elif self.avatar:
+            return self.avatar.url
+        elif fallback_to_default:
+            return static("images/default_user_avatar.png")
+        else:
+            return None
+
+    @property
+    def has_custom_avatar(self):
+        """Check if the user has a custom avatar (not the default)"""
+        return bool(self.avatar)
+
+    def get_avatar_data(self):
+        """Get avatar data as a dictionary for API responses"""
+        return {
+            'url': self.get_avatar_url(),
+            'thumbnail_url': self.get_avatar_thumbnail_url(),
+            'is_default': not self.has_custom_avatar,
+            'custom_avatar_url': self.avatar.url if self.avatar else None,
+            'custom_thumbnail_url': self.avatar_thumbnail.url if self.avatar_thumbnail else None,
+        }
 
 
 
