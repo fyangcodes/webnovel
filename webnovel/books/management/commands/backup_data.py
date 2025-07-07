@@ -101,16 +101,16 @@ class Command(BaseCommand):
         from collaboration.models import BookCollaborator, TranslationAssignment
 
         all_models = [
+            (User, "accounts"),
             (Language, "books"),
             (Author, "books"),
-            (User, "accounts"),
             (Book, "books"),
             (Chapter, "books"),
             (ChapterMedia, "books"),
             (BookFile, "books"),
             (ChangeLog, "books"),
-            (BookCollaborator, "accounts"),
-            (TranslationAssignment, "accounts"),
+            (BookCollaborator, "collaboration"),
+            (TranslationAssignment, "collaboration"),
         ]
 
         # Filter models if specific ones requested
@@ -127,7 +127,7 @@ class Command(BaseCommand):
 
         total_records = 0
 
-        for model, app in all_models:
+        for idx, (model, app) in enumerate(all_models, start=1):
             try:
                 count = model.objects.count()
                 if count == 0:
@@ -136,7 +136,8 @@ class Command(BaseCommand):
                     )
                     continue
 
-                filename = f"{backup_path}/db_{app}_{model._meta.model_name}.json"
+                # Add numeric prefix to filename for dependency order
+                filename = f"{backup_path}/db_{idx:03d}_{app}_{model._meta.model_name}.json"
                 with open(filename, "w", encoding="utf-8") as f:
                     serializers.serialize(
                         "json", model.objects.all(), stream=f, indent=2

@@ -4,11 +4,8 @@ set -e  # Exit on any error
 # Apply migrations
 python webnovel/manage.py migrate
 
-# Create superuser (interactive, see note below)
-python webnovel/manage.py createsuperuser
-
-# Load initial data (user first, then books)
-python webnovel/manage.py loaddata webnovel/webnovel/fixtures/books_complete.json
+# Load backup data
+python webnovel/manage.py restore_data webnovel/backups/backup_20250707_095633
 
 # Load llm providers
 python webnovel/manage.py setup_llm_providers
