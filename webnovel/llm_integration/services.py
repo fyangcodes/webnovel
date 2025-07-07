@@ -57,20 +57,6 @@ except ImportError:
 class LLMTranslationService:
     """Service for handling LLM API calls for translation and text processing"""
 
-    LANGUAGE_CODE_TO_NAME = {
-        "en": "English",
-        "cn": "Chinese",
-        "zh": "Chinese",
-        "zh-CN": "Chinese",
-        "zh-Hans": "Chinese",
-        "zh-Hant": "Chinese (Traditional)",
-        "fr": "French",
-        "de": "German",
-        "es": "Spanish",
-        "it": "Italian",
-        # Add more as needed
-    }
-
     def __init__(self, api_key=None, model=None, provider="openai"):
         """
         Initialize LLM service with provider-agnostic interface using LangChain
@@ -91,6 +77,36 @@ class LLMTranslationService:
 
         # Initialize the LLM client
         self.llm = self._initialize_llm()
+
+    def _get_language_name(self, language_code: str) -> str:
+        """
+        Get language name from database by language code, with lazy caching.
+        """
+        if not hasattr(self, '_language_code_to_name_cache') or self._language_code_to_name_cache is None:
+            try:
+                from books.models import Language
+                self._language_code_to_name_cache = {l.code: l.name for l in Language.objects.all()}  # type: ignore[attr-defined]
+            except Exception as e:
+                logger.warning(f"Error retrieving language from database: {e}")
+                self._language_code_to_name_cache = {}
+        # Try cache first
+        name = self._language_code_to_name_cache.get(language_code)
+        if name:
+            return name
+        # Fallback to common mappings if not found
+        fallback_mappings = {
+            "en": "English",
+            "cn": "Chinese",
+            "zh": "Chinese",
+            "zh-CN": "Chinese",
+            "zh-Hans": "Chinese",
+            "zh-Hant": "Chinese (Traditional)",
+            "fr": "French",
+            "de": "German",
+            "es": "Spanish",
+            "it": "Italian",
+        }
+        return fallback_mappings.get(language_code, language_code)
 
     def _get_default_model(self):
         """Get default model based on provider"""
@@ -501,26 +517,45 @@ class LLMTranslationService:
 
     def _simple_chapter_division(self, text: str) -> List[Dict[str, Any]]:
         """Simple fallback chapter division by sentence count"""
-        # Split by sentences (simple approach)
-        sentences = re.split(r"[。！？.!?]", text)
-
         chapters = []
-        # Regex for common chapter headings in Chinese and English
+        
+        # Enhanced regex for chapter headings - captures full titles including descriptions
+        # Chinese patterns: 第一章, 第一章 xxx, 第1章, 第1章 xxx, etc.
+        # English patterns: Chapter 1, Chapter 1: Title, CHAPTER 1, etc.
         chapter_heading_pattern = re.compile(
-            r"(第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\\s*\\d+|CHAPTER\\s*\\d+)",
-            re.UNICODE,
+            r"(第[\d一二三四五六七八九十百千零〇两]+[章回节卷][^\n]*?)(?=\n|第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\s*\d+|CHAPTER\s*\d+|$)|"
+            r"(Chapter\s*\d+[^\n]*?)(?=\n|第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\s*\d+|CHAPTER\s*\d+|$)|"
+            r"(CHAPTER\s*\d+[^\n]*?)(?=\n|第[\d一二三四五六七八九十百千零〇两]+[章回节卷]|Chapter\s*\d+|CHAPTER\s*\d+|$)",
+            re.UNICODE | re.MULTILINE
         )
 
         # Find all chapter headings and their positions
         matches = list(chapter_heading_pattern.finditer(text))
+        
         if matches and len(matches) > 1:
             # Split by chapter headings
             for idx, match in enumerate(matches):
                 start = match.start()
                 end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-                chapter_title = match.group()
-                chapter_text = text[start:end].strip()
-                chapters.append({"title": chapter_title, "text": chapter_text})
+                
+                # Extract the full title (including any description after the chapter number)
+                full_title = match.group().strip()
+                
+                # Get the chapter content (excluding the title)
+                chapter_content = text[start:end].strip()
+                
+                # Remove the title from the beginning of the content
+                if chapter_content.startswith(full_title):
+                    chapter_content = chapter_content[len(full_title):].strip()
+                
+                # Clean up any leading/trailing whitespace and newlines
+                chapter_content = re.sub(r'^\s*[\n\r]+', '', chapter_content)
+                chapter_content = re.sub(r'[\n\r]+\s*$', '', chapter_content)
+                
+                chapters.append({
+                    "title": full_title, 
+                    "text": chapter_content
+                })
             return chapters
 
         # Fallback: split by sentence-ending punctuation and character count
@@ -562,9 +597,7 @@ class LLMTranslationService:
         """
         Translate chapter text to target language with context
         """
-        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(
-            target_language, target_language
-        )
+        target_lang_name = self._get_language_name(target_language)
 
         # Detect source language from chapter
         source_language = ""
@@ -628,9 +661,7 @@ class LLMTranslationService:
         """
         Translate a short text (e.g., title or key term) to the target language.
         """
-        target_lang_name = self.LANGUAGE_CODE_TO_NAME.get(
-            target_language, target_language
-        )
+        target_lang_name = self._get_language_name(target_language)
         prompt = f"""
         Please translate the following text to {target_lang_name}. Maintain the original meaning and style.
         Text to translate:
@@ -670,7 +701,7 @@ class LLMTranslationService:
         Generate a summary/abstract of the chapter in the specified target language (default: original language)
         """
         language_name = (
-            self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
+            self._get_language_name(target_language)
             if target_language
             else "the original language"
         )
@@ -744,7 +775,7 @@ class LLMTranslationService:
         Extract key terms that should be consistently translated, in the specified target language (default: original language)
         """
         language_name = (
-            self.LANGUAGE_CODE_TO_NAME.get(target_language, target_language)
+            self._get_language_name(target_language)
             if target_language
             else "the original language"
         )
@@ -815,3 +846,7 @@ class LLMTranslationService:
             logger.error(f"Error extracting key terms: {str(e)}")
 
         return []
+
+    def clear_language_cache(self):
+        """Clear the cached language code-to-name mapping."""
+        self._language_code_to_name_cache = None

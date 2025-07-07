@@ -5,7 +5,7 @@ set -e  # Exit on any error
 python webnovel/manage.py migrate
 
 # Load backup data
-python webnovel/manage.py restore_data webnovel/backups/backup_20250707_095633
+python webnovel/manage.py restore_data webnovel/backups/backup_20250707_185418
 
 # Load llm providers
 python webnovel/manage.py setup_llm_providers
