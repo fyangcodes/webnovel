@@ -120,7 +120,7 @@
                             </a>
                         {% endif %}
                         {% if user.is_translator %}
-                            <a href="{% url 'accounts:translation_assignments' %}" class="btn btn-success btn-sm">
+                            <a href="{% url 'collaboration:translation_assignments' %}" class="btn btn-success btn-sm">
                                 <i class="fas fa-language"></i> View Translations
                             </a>
                         {% endif %}
@@ -227,7 +227,7 @@
                     </div>
                     {% if translation_assignments.count > 5 %}
                         <div class="text-center mt-3">
-                            <a href="{% url 'accounts:translation_assignments' %}" class="btn btn-outline-secondary">
+                            <a href="{% url 'collaboration:translation_assignments' %}" class="btn btn-outline-secondary">
                                 View All Assignments
                             </a>
                         </div>

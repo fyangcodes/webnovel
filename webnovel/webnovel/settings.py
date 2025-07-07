@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "imagekit",
     # Local apps
     "books.apps.BooksConfig",
+    "collaboration.apps.CollaborationConfig",
     "llm_integration.apps.LlmIntegrationConfig",
 ]
 

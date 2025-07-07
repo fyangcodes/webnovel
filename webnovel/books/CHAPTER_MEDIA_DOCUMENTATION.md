@@ -10,7 +10,7 @@ The `ChapterMedia` model is a generalized media storage system that extends the 
 - **Automatic Type Detection**: Media type is automatically detected from file extension
 - **Rich Metadata**: File size, MIME type, duration (for audio/video), thumbnails
 - **Processing Status**: Track processing state and errors
-- **Backward Compatibility**: Existing `ChapterImage` functionality is preserved
+- **Complete Replacement**: `ChapterMedia` completely replaces the old `ChapterImage` model
 - **Organized Storage**: Files are stored in organized directory structures
 - **Admin Interface**: Full Django admin integration with inline editing
 
@@ -240,21 +240,14 @@ The ChapterMedia model includes a comprehensive Django admin interface:
 ### Inline Editing
 ChapterMedia can be edited inline within the Chapter admin interface, making it easy to manage media alongside chapter content.
 
-## Backward Compatibility
+## Migration from ChapterImage
 
-The new ChapterMedia model is designed to work alongside the existing ChapterImage model:
+The ChapterMedia model has completely replaced the ChapterImage model:
 
-### Existing ChapterImage Functionality
-- All existing ChapterImage instances continue to work
-- The `chapter.images` relationship is preserved
-- Existing structured content with `image_id` references still work
-
-### Migration Path
-To migrate from ChapterImage to ChapterMedia:
-
-1. **Gradual Migration**: Use both models simultaneously
-2. **Data Migration**: Create ChapterMedia instances from existing ChapterImage instances
-3. **Content Updates**: Update structured content to reference new media IDs
+### Migration Completed
+- All ChapterImage functionality has been migrated to ChapterMedia
+- The ChapterImage model has been removed from the codebase
+- All image handling now uses the more robust ChapterMedia model
 
 ### Structured Content Integration
 
@@ -378,7 +371,7 @@ Media items are stored in structured content as:
 ]
 ```
 
-**Note**: Images use `image_id` for backward compatibility, while other media types use `media_id`.
+**Note**: All media types now use `media_id` for consistency.
 
 ### Retrieving Content with Media
 
@@ -393,7 +386,7 @@ for element in content_elements:
         if element.get('media'):
             print(f"Image: {element['media'].display_title}")
         else:
-            print(f"Legacy Image: {element['image'].id}")
+            print(f"Image: {element['media'].display_title}")
     else:
         print(f"{element['type'].title()}: {element['media'].display_title}")
 ```
@@ -420,4 +413,4 @@ To apply the database migration:
 python manage.py migrate books
 ```
 
-This will create the new ChapterMedia table while preserving existing ChapterImage data. 
+This will create the new ChapterMedia table and remove the old ChapterImage table. 

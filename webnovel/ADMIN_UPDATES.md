@@ -22,7 +22,7 @@ The Django admin has been enhanced to support the new structured content functio
 - **Structured Content**: Configuration for content parsing and file storage
 - **Content Statistics**: Quick overview of content structure
 
-### 2. ChapterImage Admin
+### 2. ChapterMedia Admin (Replaces ChapterImage)
 
 New dedicated admin for managing chapter images:
 - List display: ID, chapter, position, caption, created date
@@ -97,7 +97,7 @@ Enhanced chapter change form with:
 ### Standard URLs Enhanced
 - Chapter list view with new filters and actions
 - Chapter change form with structured content preview
-- ChapterImage management interface
+- ChapterMedia management interface (replaces ChapterImage)
 
 ## Benefits
 

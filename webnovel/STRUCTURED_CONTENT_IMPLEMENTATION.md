@@ -58,14 +58,17 @@ class Chapter(TimeStampedModel):
     )
 ```
 
-### ChapterImage Model
+### ChapterMedia Model (Replaces ChapterImage)
 ```python
-class ChapterImage(models.Model):
-    chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='chapter_image_upload_to')
+class ChapterMedia(TimeStampedModel):
+    chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name='media')
+    media_type = models.CharField(max_length=20, choices=MEDIA_TYPE_CHOICES, default='image')
+    file = models.FileField(upload_to='chapter_media_upload_to')
+    title = models.CharField(max_length=255, blank=True)
     caption = models.TextField(blank=True)
     alt_text = models.CharField(max_length=255, blank=True)
     position = models.PositiveIntegerField(help_text="Order in chapter")
+    # Additional fields for different media types...
 ```
 
 ### ChapterComment Model
@@ -73,7 +76,7 @@ class ChapterImage(models.Model):
 class ChapterComment(models.Model):
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name='comments')
     element_index = models.PositiveIntegerField(null=True, blank=True)  # Array index
-    image = models.ForeignKey(ChapterImage, on_delete=models.CASCADE, related_name='comments', null=True, blank=True)
+    image = models.ForeignKey(ChapterMedia, on_delete=models.CASCADE, related_name='comments', null=True, blank=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='chapter_comments')
     comment_type = models.CharField(max_length=20, choices=COMMENT_TYPE_CHOICES, default='paragraph')
     content = models.TextField()

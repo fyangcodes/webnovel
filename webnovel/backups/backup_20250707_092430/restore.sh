@@ -1,6 +1,6 @@
 #!/bin/bash
-# Restoration script for backup 20250706_210027
-# Generated on 2025-07-06 21:00:27
+# Restoration script for backup 20250707_092430
+# Generated on 2025-07-07 09:24:30
 # Usage: ./restore.sh [--skip-files] [--force]
 
 set -e
@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "🔄 Starting restoration from backup 20250706_210027..."
+echo "🔄 Starting restoration from backup 20250707_092430..."
 
 # Check if backup exists
 if [ ! -d "$BACKUP_DIR" ]; then

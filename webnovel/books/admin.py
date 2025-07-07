@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from django.shortcuts import redirect
 from django.contrib import messages
-from .models import Book, Chapter, Language, BookFile, Author, ChangeLog, ChapterImage, ChapterMedia
+from .models import Book, Chapter, Language, BookFile, Author, ChangeLog, ChapterMedia
 from .tasks import sync_media_with_content_async, rebuild_structured_content_from_media_async
 
 
@@ -10,11 +10,6 @@ class BookFileInline(admin.TabularInline):
     model = BookFile
     extra = 1
 
-
-class ChapterImageInline(admin.TabularInline):
-    model = ChapterImage
-    extra = 1
-    readonly_fields = ['created_at']
 
 
 class ChapterMediaInline(admin.TabularInline):
@@ -100,7 +95,7 @@ class ChapterAdmin(admin.ModelAdmin):
         "paragraph_count",
         "image_count"
     ]
-    inlines = [ChapterImageInline, ChapterMediaInline]
+    inlines = [ChapterMediaInline]
     
     fieldsets = (
         (
@@ -189,7 +184,7 @@ class ChapterAdmin(admin.ModelAdmin):
             return "N/A"
         
         try:
-            return obj.images.count()
+            return obj.media.filter(media_type='image').count()
         except Exception:
             return "Error"
     
@@ -401,34 +396,6 @@ class ChapterAdmin(admin.ModelAdmin):
         
         return redirect('admin:books_chapter_change', chapter_id)
 
-
-@admin.register(ChapterImage)
-class ChapterImageAdmin(admin.ModelAdmin):
-    list_display = [
-        "id",
-        "chapter", 
-        "position", 
-        "caption", 
-        "created_at"
-    ]
-    list_filter = ["created_at", "chapter__book"]
-    search_fields = ["caption", "alt_text", "chapter__title", "chapter__book__title"]
-    readonly_fields = ["created_at"]
-    
-    fieldsets = (
-        (
-            "Basic Information",
-            {"fields": ("chapter", "image", "position")},
-        ),
-        (
-            "Content",
-            {"fields": ("caption", "alt_text")},
-        ),
-        (
-            "Timestamps",
-            {"fields": ("created_at",)},
-        ),
-    )
 
 
 @admin.register(ChapterMedia)

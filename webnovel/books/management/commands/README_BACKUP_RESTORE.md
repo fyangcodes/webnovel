@@ -82,7 +82,7 @@ backup_YYYYMMDD_HHMMSS/
 ├── db_accounts_user.json
 ├── db_books_book.json
 ├── db_books_chapter.json
-├── db_books_chapterimage.json
+├── db_books_chaptermedia.json
 ├── db_books_bookfile.json
 ├── db_books_changelog.json
 ├── db_accounts_bookcollaborator.json
@@ -121,7 +121,7 @@ The backup includes all models in dependency order:
 - `Author` - Book authors
 - `Book` - Books
 - `Chapter` - Book chapters
-- `ChapterImage` - Chapter images
+- `ChapterMedia` - Chapter media (images, audio, video, documents)
 - `BookFile` - Book files
 - `ChangeLog` - Chapter change logs
 

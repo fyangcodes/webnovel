@@ -1,7 +1,7 @@
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from .models import User
+from .models import TranslationAssignment, BookCollaborator
 
 
 def get_user_permissions(user, book=None):
@@ -101,6 +101,86 @@ def get_books_user_can_access(user):
         return Book.objects.filter(status="published")
 
 
+def get_translation_assignments_for_user(user):
+    """
+    Get translation assignments for a user
+
+    Args:
+        user: User instance
+
+    Returns:
+        QuerySet: Translation assignments for the user
+    """
+    # Superusers can see all translation assignments
+    if user.is_superuser:
+        return TranslationAssignment.objects.all()
+    elif user.role in ["translator", "editor", "admin"]:
+        return user.translation_assignments.all()
+    return TranslationAssignment.objects.none()
+
+
+def can_user_translate_chapter(user, chapter, target_language):
+    """
+    Check if user can translate a specific chapter to a target language
+
+    Args:
+        user: User instance
+        chapter: Chapter instance
+        target_language: Language instance
+
+    Returns:
+        bool: True if user can translate, False otherwise
+    """
+    # Check if user has translation permissions
+    if not check_permission(user, "can_translate", chapter.book):
+        return False
+
+    # Check if translation already exists
+    existing_translation = chapter.translations.filter(
+        language=target_language
+    ).exists()
+    if existing_translation:
+        return False
+
+    # Check if user already has an assignment for this translation
+    existing_assignment = chapter.translation_assignments.filter(
+        translator=user, target_language=target_language
+    ).exists()
+
+    return not existing_assignment
+
+
+def assign_translation_task(
+    user, chapter, target_language, assigned_by=None, due_date=None
+):
+    """
+    Assign a translation task to a user
+
+    Args:
+        user: User to assign the task to
+        chapter: Chapter to translate
+        target_language: Target language
+        assigned_by: User who is making the assignment
+        due_date: Due date for the translation
+
+    Returns:
+        TranslationAssignment: Created assignment instance
+    """
+    if not can_user_translate_chapter(user, chapter, target_language):
+        raise ValueError("User cannot be assigned this translation task")
+
+    assignment = TranslationAssignment.objects.create(
+        chapter=chapter,
+        translator=user,
+        target_language=target_language,
+        assigned_by=assigned_by,
+        due_date=due_date,
+        status="assigned",
+    )
+
+    return assignment
+
+
 def get_user_role_display(user):
     """
     Get a user-friendly display name for the user's role
@@ -125,6 +205,8 @@ def get_available_roles_for_user(current_user, target_user=None):
     Returns:
         list: Available role choices
     """
+    from accounts.models import User
+    
     # Superusers can assign all roles
     if current_user.is_superuser:
         return User.ROLE_CHOICES
@@ -140,3 +222,28 @@ def get_available_roles_for_user(current_user, target_user=None):
     else:
         # Other roles cannot assign roles
         return []
+
+
+def get_collaboration_roles_for_user(current_user, book):
+    """
+    Get available collaboration roles that the current user can assign for a book
+
+    Args:
+        current_user: User making the collaboration assignment
+        book: Book instance
+
+    Returns:
+        list: Available collaboration role choices
+    """
+    if current_user.role == "admin":
+        return BookCollaborator.ROLE_CHOICES
+    elif current_user.role == "editor" or book.owner == current_user:
+        # Editors and book owners can assign collaboration roles
+        return [
+            ("co_author", "Co-Author"),
+            ("translator", "Translator"),
+            ("editor", "Editor"),
+            ("reviewer", "Reviewer"),
+        ]
+    else:
+        return [] 

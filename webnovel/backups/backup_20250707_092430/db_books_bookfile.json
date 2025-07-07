@@ -1,0 +1,22 @@
+[
+{
+  "model": "books.bookfile",
+  "pk": 1,
+  "fields": {
+    "created_at": "2025-07-07T09:20:39.528Z",
+    "updated_at": "2025-07-07T09:20:39.528Z",
+    "book": 1,
+    "file": "books/1/files/和空姐同居的日子short_gb.txt",
+    "description": "",
+    "owner": 1,
+    "file_size": 14098,
+    "file_hash": "4f25c3c159590a7bbb3039a587df38d63a456dace7ad99b0390171a4642cf2c5",
+    "file_type": "txt",
+    "status": "pending",
+    "processing_progress": 0,
+    "error_message": "",
+    "processing_started_at": null,
+    "processing_completed_at": null
+  }
+}
+]

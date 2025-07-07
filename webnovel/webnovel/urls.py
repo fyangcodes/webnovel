@@ -29,6 +29,7 @@ urlpatterns = [
     # App URLs
     path("", RedirectView.as_view(url="/books/", permanent=False)),
     path("books/", include("books.urls", namespace="books")),
+    path("collaboration/", include("collaboration.urls", namespace="collaboration")),
     path("llm/", include("llm_integration.urls", namespace="llm_integration")),
 ]
 

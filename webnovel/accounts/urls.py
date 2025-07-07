@@ -21,37 +21,7 @@ urlpatterns = [
         views.assign_role_ajax,
         name="assign_role_ajax",
     ),
-    # Translation assignments
-    path(
-        "translations/",
-        views.TranslationAssignmentListView.as_view(),
-        name="translation_assignments",
-    ),
-    path(
-        "translations/<int:pk>/",
-        views.TranslationAssignmentDetailView.as_view(),
-        name="translation_assignment_detail",
-    ),
-    path(
-        "translations/<int:pk>/start/",
-        views.start_translation_assignment,
-        name="start_translation_assignment",
-    ),
-    path(
-        "translations/<int:pk>/submit/",
-        views.submit_translation_assignment,
-        name="submit_translation_assignment",
-    ),
-    path(
-        "translations/<int:pk>/approve/",
-        views.approve_translation_assignment,
-        name="approve_translation_assignment",
-    ),
-    path(
-        "translations/<int:pk>/reject/",
-        views.reject_translation_assignment,
-        name="reject_translation_assignment",
-    ),
+    
     # Authentication
     path(
         "login/",
