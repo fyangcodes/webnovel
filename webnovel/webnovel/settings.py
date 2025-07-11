@@ -26,7 +26,9 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-development-secret-key-change-in-production")
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY", "django-insecure-development-secret-key-change-in-production"
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
@@ -56,6 +58,7 @@ INSTALLED_APPS = [
     "crispy_forms",
     "crispy_bootstrap5",
     "imagekit",
+    "storages",
     # Local apps
     "books.apps.BooksConfig",
     "collaboration.apps.CollaborationConfig",
@@ -152,9 +155,7 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Media files
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+
 
 # Celery Configuration
 # Use database as broker for development if Redis is not available
@@ -199,28 +200,43 @@ LLM_PROVIDERS = {
     "openai": {
         "api_key": OPENAI_API_KEY,
         "default_model": "gpt-3.5-turbo",
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "gpt-4"]
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "gpt-4"],
     },
     "anthropic": {
         "api_key": ANTHROPIC_API_KEY,
         "default_model": "claude-3-sonnet-20240229",
-        "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"]
+        "models": [
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+            "claude-3-sonnet-20240229",
+            "claude-3-haiku-20240307",
+        ],
     },
     "google": {
         "api_key": GOOGLE_API_KEY,
         "default_model": "gemini-pro",
-        "models": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro", "gemini-pro-vision"]
+        "models": [
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+            "gemini-pro",
+            "gemini-pro-vision",
+        ],
     },
     "cohere": {
         "api_key": COHERE_API_KEY,
         "default_model": "command",
-        "models": ["command", "command-light", "command-nightly"]
+        "models": ["command", "command-light", "command-nightly"],
     },
     "mistral": {
         "api_key": MISTRAL_API_KEY,
         "default_model": "mistral-large-latest",
-        "models": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"]
-    }
+        "models": [
+            "mistral-large-latest",
+            "mistral-medium-latest",
+            "mistral-small-latest",
+        ],
+    },
 }
 
 # Translation Settings
@@ -279,4 +295,17 @@ LOGGING = {
 }
 
 # Custom User Model
-AUTH_USER_MODEL = 'accounts.User'
+AUTH_USER_MODEL = "accounts.User"
+
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")
+AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
+
+# Media files
+# MEDIA_URL = "/media/"
+# MEDIA_ROOT = BASE_DIR / "media"
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+MEDIA_ROOT = "media/"

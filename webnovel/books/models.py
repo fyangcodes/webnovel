@@ -290,16 +290,16 @@ class Book(TimeStampedModel):
     def get_cover_image_data(self):
         """Get cover image data as a dictionary for API responses"""
         return {
-            'url': self.get_cover_image_url(),
-            'is_default': not self.has_custom_cover,
-            'custom_image_url': self.cover_image.url if self.cover_image else None,
+            "url": self.get_cover_image_url(),
+            "is_default": not self.has_custom_cover,
+            "custom_image_url": self.cover_image.url if self.cover_image else None,
         }
 
 
 # --- MIXINS FOR CHAPTER ---
 
 
-class StructuredContentMixin(models.Model):
+class ChapterContentMixin(models.Model):
     content = models.TextField()
     content_file_path = models.CharField(
         max_length=255, blank=True, help_text="Path to JSON content file"
@@ -523,7 +523,7 @@ class StructuredContentMixin(models.Model):
             return True
 
 
-class StructuredContentMediaMixin(StructuredContentMixin):
+class ChapterMediaMixin(ChapterContentMixin):
     class Meta:
         abstract = True
 
@@ -977,6 +977,25 @@ class SchedulableMixin(models.Model):
     class Meta:
         abstract = True
 
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        from django.utils import timezone
+
+        # Validate scheduled publishing
+        if getattr(self, "status", None) == "scheduled" and not getattr(
+            self, "active_at", None
+        ):
+            raise ValidationError("Scheduled chapters must have an active_at date")
+        if (
+            getattr(self, "status", None) == "published"
+            and getattr(self, "active_at", None)
+            and getattr(self, "active_at") > timezone.now()
+        ):
+            raise ValidationError(
+                "Published chapters cannot have future active_at dates"
+            )
+        super().clean()
+
     @property
     def is_active(self):
         """Returns True if the chapter is currently active (published and past active_at)"""
@@ -1088,26 +1107,21 @@ class SchedulableMixin(models.Model):
             queryset = queryset.filter(book=book)
         return queryset.filter(active_at__gt=timezone.now())
 
-    def has_translations(self):
-        """Check if this chapter has translations"""
-        return self.translations.exists()
 
-    def get_translation(self, language):
-        """
-        Returns the translated chapter in the specified language.
-        Accepts either a Language instance or a language code (str).
-        """
-        if isinstance(language, str):
-            return self.translations.filter(language__code=language).first()
-        return self.translations.filter(language=language).first()
+class AIMetadataMixin(models.Model):
+    abstract = models.TextField(
+        blank=True, help_text="AI-generated summary for translation context"
+    )
+    key_terms = models.JSONField(
+        default=list, blank=True, help_text="Important terms for consistent translation"
+    )
 
-    def get_effective_language(self):
-        """Get the effective language of this chapter (inherits from book if not specified)"""
-        return self.language or self.book.language
+    class Meta:
+        abstract = True
 
 
 # Refactored Chapter model
-class Chapter(TimeStampedModel, StructuredContentMediaMixin, SchedulableMixin):
+class Chapter(TimeStampedModel, ChapterMediaMixin, SchedulableMixin, AIMetadataMixin):
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     title = models.CharField(max_length=255)
     slug = models.CharField(
@@ -1130,12 +1144,6 @@ class Chapter(TimeStampedModel, StructuredContentMediaMixin, SchedulableMixin):
     )
     chapter_number = AutoIncrementingPositiveIntegerField(scope_field="book")
     excerpt = models.TextField(max_length=1000, blank=True)
-    abstract = models.TextField(
-        blank=True, help_text="AI-generated summary for translation context"
-    )
-    key_terms = models.JSONField(
-        default=list, blank=True, help_text="Important terms for consistent translation"
-    )
     word_count = models.PositiveIntegerField(default=0)
     char_count = models.PositiveIntegerField(default=0)
 
@@ -1155,33 +1163,33 @@ class Chapter(TimeStampedModel, StructuredContentMediaMixin, SchedulableMixin):
     def clean(self):
         from django.core.exceptions import ValidationError
 
+        super().clean()
         if not self.title:
             raise ValidationError("Title is required")
         if not self.content:
             raise ValidationError("Content is required")
         if self.original_chapter and self.original_chapter == self:
             raise ValidationError("A chapter cannot be its own original chapter")
-
-        # Validate scheduled publishing
-        if self.status == "scheduled" and not self.active_at:
-            raise ValidationError("Scheduled chapters must have an active_at date")
-        if (
-            self.status == "published"
-            and self.active_at
-            and self.active_at > timezone.now()
-        ):
-            raise ValidationError(
-                "Published chapters cannot have future active_at dates"
-            )
-
         # Ensure slug is not empty (let Django's SlugField handle format validation)
         if self.slug and self.slug.strip() == "":
             raise ValidationError("Slug cannot be empty")
 
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        # ... keep only logic not covered by mixins ...
-        super().save(*args, **kwargs)
+    def has_translations(self):
+        """Check if this chapter has translations"""
+        return self.translations.exists()
+
+    def get_translation(self, language):
+        """
+        Returns the translated chapter in the specified language.
+        Accepts either a Language instance or a language code (str).
+        """
+        if isinstance(language, str):
+            return self.translations.filter(language__code=language).first()
+        return self.translations.filter(language=language).first()
+
+    def get_effective_language(self):
+        """Get the effective language of this chapter (inherits from book if not specified)"""
+        return self.language or self.book.language
 
 
 class ChapterMedia(TimeStampedModel):
@@ -1389,13 +1397,6 @@ class ChangeLog(TimeStampedModel):
         ]
 
 
-def book_file_upload_to(instance, filename):
-    """Generate upload path for book files"""
-    # instance is a BookFile object
-    # instance.book is the related Book object
-    return f"{instance.book.get_book_files_directory()}/{filename}"
-
-
 class BookFile(TimeStampedModel):
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -1408,7 +1409,7 @@ class BookFile(TimeStampedModel):
 
     book = models.ForeignKey("Book", on_delete=models.CASCADE, related_name="files")
     file = models.FileField(
-        upload_to=book_file_upload_to,
+        upload_to="book_file_upload_to",
         validators=[
             FileExtensionValidator(allowed_extensions=["pdf", "txt", "docx", "epub"])
         ],
@@ -1481,6 +1482,13 @@ class BookFile(TimeStampedModel):
     @property
     def is_failed(self):
         return self.status == "failed"
+
+    @staticmethod
+    def book_file_upload_to(instance, filename):
+        """Generate upload path for book files"""
+        # instance is a BookFile object
+        # instance.book is the related Book object
+        return f"{instance.book.get_book_files_directory()}/{filename}"
 
 
 def get_default_book_cover_url():
