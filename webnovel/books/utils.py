@@ -12,6 +12,7 @@ from django.core.exceptions import ValidationError
 from django.templatetags.static import static
 from .models import Book
 from accounts.models import User
+from django.core.files.storage import default_storage
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class TextExtractor:
     def _extract_from_pdf(file_path):
         text = ""
         try:
-            with open(file_path, "rb") as file:
+            with default_storage.open(file_path, "rb") as file:
                 pdf_reader = PyPDF2.PdfReader(file)
                 for page in pdf_reader.pages:
                     text += page.extract_text() + "\n"
@@ -158,7 +159,7 @@ class TextExtractor:
         """Extract text from TXT file with intelligent encoding detection"""
         try:
             # Read file as bytes first
-            with open(file_path, "rb") as file:
+            with default_storage.open(file_path, "rb") as file:
                 content_bytes = file.read()
 
             # Use intelligent decoding with charset detection
