@@ -150,6 +150,10 @@ class ChapterCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         book = get_object_or_404(Book, pk=self.kwargs["pk"], owner=self.request.user)
         form.instance.book = book
+        
+        # Set user for raw content saving
+        form.user = self.request.user
+        
         response = super().form_valid(form)
         messages.success(
             self.request, f"Chapter '{form.instance.title}' created successfully!"
@@ -233,20 +237,23 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
         if chapter.pk:  # Only for existing chapters
             try:
                 original_chapter = Chapter.objects.get(pk=chapter.pk)
-                original_content = original_chapter.content
+                original_content = original_chapter.get_raw_content()  # Use raw content
                 original_title = original_chapter.title
             except Chapter.DoesNotExist:
                 pass
         
+        # Set user for raw content saving
+        form.user = self.request.user
+        
         response = super().form_valid(form)
         
-        # Create changelog entry for manual edits to all chapters
+        # Create changelog entry for manual edits
         try:
             content_type = ContentType.objects.get_for_model(Chapter)
             
             # Check for any changes (title or content)
             title_changed = original_title and original_title != chapter.title
-            content_changed = original_content and original_content != chapter.content
+            content_changed = original_content and original_content != form.cleaned_data.get('content', '')
             
             # Generate diff if there are any changes
             diff_content = ""
@@ -264,7 +271,7 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
                 if content_changed:
                     content_diff = self._generate_diff(
                         original_content,
-                        chapter.content,
+                        form.cleaned_data.get('content', ''),
                         context_lines=3
                     )
                 
@@ -430,99 +437,128 @@ class AnalyzeChapterView(LoginRequiredMixin, View):
 
             llm_service = LLMTranslationService()
 
-            # Generate abstract and key terms
-            abstract = llm_service.generate_chapter_abstract(chapter.content)
-            key_terms = llm_service.extract_key_terms(chapter.content)
+            # Get raw content for analysis
+            raw_content = chapter.get_raw_content()
+            if not raw_content:
+                return JsonResponse(
+                    {"error": "No content found for analysis"}, status=400
+                )
 
-            # Update chapter
+            # Generate abstract and key terms
+            abstract = llm_service.generate_chapter_abstract(raw_content)
+            key_terms = llm_service.extract_key_terms(raw_content)
+
+            # Update chapter with generated content
             chapter.abstract = abstract
             chapter.key_terms = key_terms
             chapter.save()
 
-            messages.success(
-                request,
-                f"Chapter '{chapter.title}' analyzed successfully! Generated abstract and {len(key_terms)} key terms.",
-            )
-
             return JsonResponse(
                 {
                     "success": True,
-                    "message": f"Chapter analyzed successfully! Generated abstract and {len(key_terms)} key terms.",
                     "abstract": abstract,
                     "key_terms": key_terms,
+                    "message": "Chapter analyzed successfully",
                 }
             )
 
         except Exception as e:
-            error_msg = f"Failed to analyze chapter: {str(e)}"
-            messages.error(request, error_msg)
-            return JsonResponse({"success": False, "error": error_msg})
+            logger.error(f"Error analyzing chapter {chapter_id}: {str(e)}")
+            return JsonResponse(
+                {"error": f"Analysis failed: {str(e)}"}, status=500
+            )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
 class BatchAnalyzeChaptersView(LoginRequiredMixin, View):
-    """View for batch analyzing multiple chapters"""
+    """View for batch analyzing multiple chapters with LLM."""
 
     def post(self, request, *args, **kwargs):
         try:
-            data = json.loads(request.body)
-            chapter_ids = data.get("chapter_ids", [])
+            book_id = kwargs.get("pk")
+            book = get_object_or_404(Book, pk=book_id, owner=request.user)
 
-            if not chapter_ids:
-                return JsonResponse(
-                    {"success": False, "error": "No chapter IDs provided"}
-                )
-
-            chapters = Chapter.objects.filter(
-                id__in=chapter_ids, book__owner=request.user
-            )
+            # Get chapters to analyze (only draft chapters without abstracts)
+            chapters = book.chapters.filter(
+                status="draft", abstract__isnull=True
+            ).exclude(abstract="")
 
             if not chapters.exists():
                 return JsonResponse(
-                    {"success": False, "error": "No valid chapters found"}
+                    {"error": "No chapters found for analysis"}, status=400
                 )
 
-            # Process each chapter with LLM
-            processed_count = 0
+            # Import LLM service here to avoid circular imports
+            from llm_integration.services import LLMTranslationService
+
+            llm_service = LLMTranslationService()
+            results = []
+
             for chapter in chapters:
                 try:
-                    # Import LLM service here to avoid circular imports
-                    from llm_integration.services import LLMTranslationService
+                    # Get raw content for analysis
+                    raw_content = chapter.get_raw_content()
+                    if not raw_content:
+                        results.append(
+                            {
+                                "chapter_id": chapter.id,
+                                "title": chapter.title,
+                                "success": False,
+                                "error": "No content found",
+                            }
+                        )
+                        continue
 
-                    llm_service = LLMTranslationService()
-
-                    # Generate abstract and key terms with user tracking
-                    abstract = llm_service.generate_chapter_abstract(
-                        chapter.content, chapter=chapter, user=request.user
-                    )
-                    key_terms = llm_service.extract_key_terms(
-                        chapter.content, chapter=chapter, user=request.user
-                    )
+                    # Generate abstract and key terms
+                    abstract = llm_service.generate_chapter_abstract(raw_content)
+                    key_terms = llm_service.extract_key_terms(raw_content)
 
                     # Update chapter
                     chapter.abstract = abstract
                     chapter.key_terms = key_terms
                     chapter.save()
 
-                    processed_count += 1
+                    results.append(
+                        {
+                            "chapter_id": chapter.id,
+                            "title": chapter.title,
+                            "success": True,
+                            "abstract": abstract,
+                            "key_terms": key_terms,
+                        }
+                    )
 
                 except Exception as e:
-                    # Log error but continue with other chapters
-                    print(f"Error processing chapter {chapter.id}: {str(e)}")
-                    continue
+                    results.append(
+                        {
+                            "chapter_id": chapter.id,
+                            "title": chapter.title,
+                            "success": False,
+                            "error": str(e),
+                        }
+                    )
+
+            success_count = sum(1 for r in results if r["success"])
+            error_count = len(results) - success_count
 
             return JsonResponse(
                 {
                     "success": True,
-                    "message": f"Successfully processed {processed_count} out of {len(chapters)} chapters",
-                    "processed_count": processed_count,
+                    "results": results,
+                    "summary": {
+                        "total": len(results),
+                        "successful": success_count,
+                        "failed": error_count,
+                    },
+                    "message": f"Batch analysis completed: {success_count} successful, {error_count} failed",
                 }
             )
 
-        except json.JSONDecodeError:
-            return JsonResponse({"success": False, "error": "Invalid JSON data"})
         except Exception as e:
-            return JsonResponse({"success": False, "error": str(e)})
+            logger.error(f"Error in batch analysis for book {book_id}: {str(e)}")
+            return JsonResponse(
+                {"error": f"Batch analysis failed: {str(e)}"}, status=500
+            )
 
 
 class BookCreateTranslationView(LoginRequiredMixin, CreateView):

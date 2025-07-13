@@ -1,5 +1,6 @@
 import os
 import logging
+import tempfile
 
 import PyPDF2
 
@@ -125,9 +126,27 @@ class TextExtractor:
     """Utility class for extracting text from various file formats"""
 
     @staticmethod
-    def extract_text_from_file(file_path):
-        """Extract text based on file extension"""
-        _, ext = os.path.splitext(file_path.lower())
+    def extract_text_from_file(file_obj_or_path):
+        """
+        Extract text based on file extension.
+        
+        Args:
+            file_obj_or_path: Either a file-like object or a file path string
+            
+        Returns:
+            Extracted text as string
+        """
+        # Determine if we have a file object or path
+        if hasattr(file_obj_or_path, 'name'):
+            # It's a file-like object
+            filename = file_obj_or_path.name
+            file_obj = file_obj_or_path
+        else:
+            # It's a path string
+            filename = file_obj_or_path
+            file_obj = None
+            
+        _, ext = os.path.splitext(filename.lower())
 
         extractors = {
             ".pdf": TextExtractor._extract_from_pdf,
@@ -140,27 +159,40 @@ class TextExtractor:
         if not extractor:
             raise ValidationError(f"Unsupported file format: {ext}")
 
-        return extractor(file_path)
+        return extractor(file_obj_or_path)
 
     @staticmethod
-    def _extract_from_pdf(file_path):
+    def _extract_from_pdf(file_obj_or_path):
+        """Extract text from PDF file"""
         text = ""
         try:
-            with default_storage.open(file_path, "rb") as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                for page in pdf_reader.pages:
-                    text += page.extract_text() + "\n"
+            if hasattr(file_obj_or_path, 'read'):
+                # It's a file-like object
+                pdf_reader = PyPDF2.PdfReader(file_obj_or_path)
+            else:
+                # It's a path string, open with storage
+                with default_storage.open(file_obj_or_path, "rb") as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    
+            for page in pdf_reader.pages:
+                text += page.extract_text() + "\n"
         except Exception as e:
             raise ValidationError(f"Error reading PDF: {str(e)}")
         return text.strip()
 
     @staticmethod
-    def _extract_from_txt(file_path):
+    def _extract_from_txt(file_obj_or_path):
         """Extract text from TXT file with intelligent encoding detection"""
         try:
-            # Read file as bytes first
-            with default_storage.open(file_path, "rb") as file:
-                content_bytes = file.read()
+            if hasattr(file_obj_or_path, 'read'):
+                # It's a file-like object
+                content_bytes = file_obj_or_path.read()
+                # Reset file pointer for potential future reads
+                file_obj_or_path.seek(0)
+            else:
+                # It's a path string, open with storage
+                with default_storage.open(file_obj_or_path, "rb") as file:
+                    content_bytes = file.read()
 
             # Use intelligent decoding with charset detection
             return decode_text(content_bytes)
@@ -168,22 +200,57 @@ class TextExtractor:
             raise ValidationError(f"Error reading TXT file: {str(e)}")
 
     # @staticmethod
-    # def _extract_from_docx(file_path):
+    # def _extract_from_docx(file_obj_or_path):
     #     try:
-    #         doc = Document(file_path)
+    #         if hasattr(file_obj_or_path, 'name'):
+    #             # It's a file-like object
+    #             doc = Document(file_obj_or_path)
+    #         else:
+    #             # It's a path string
+    #             doc = Document(file_obj_or_path)
     #         text = []
     #         for paragraph in doc.paragraphs:
-    #         text.append(paragraph.text)
+    #             text.append(paragraph.text)
     #         return "\n".join(text)
     #     except Exception as e:
     #         raise ValidationError(f"Error reading DOCX: {str(e)}")
 
     @staticmethod
-    def _extract_from_epub(file_path):
+    def _extract_from_epub(file_obj_or_path):
+        """Extract text from EPUB file"""
         try:
-            book = epub.read_epub(file_path)
-            text = []
+            if hasattr(file_obj_or_path, 'name'):
+                # It's a file-like object, we need to save it temporarily
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.epub') as temp_file:
+                    # Copy content to temporary file
+                    file_obj_or_path.seek(0)
+                    temp_file.write(file_obj_or_path.read())
+                    temp_file_path = temp_file.name
+                
+                try:
+                    book = epub.read_epub(temp_file_path)
+                finally:
+                    # Clean up temporary file
+                    os.unlink(temp_file_path)
+            else:
+                # It's a path string, we need to download it temporarily for S3
+                if hasattr(default_storage, 'url'):
+                    # For S3 storage, download to temp file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.epub') as temp_file:
+                        with default_storage.open(file_obj_or_path, 'rb') as source_file:
+                            temp_file.write(source_file.read())
+                        temp_file_path = temp_file.name
+                    
+                    try:
+                        book = epub.read_epub(temp_file_path)
+                    finally:
+                        # Clean up temporary file
+                        os.unlink(temp_file_path)
+                else:
+                    # For local storage, use path directly
+                    book = epub.read_epub(file_obj_or_path)
 
+            text = []
             for item in book.get_items():
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
                     soup = BeautifulSoup(item.get_content(), "html.parser")
@@ -196,7 +263,8 @@ class TextExtractor:
 
 def extract_text_from_file(uploaded_file):
     """Main function to extract text from uploaded file"""
-    return TextExtractor.extract_text_from_file(uploaded_file.path)
+    # For uploaded files, we can use the file object directly
+    return TextExtractor.extract_text_from_file(uploaded_file)
 
 
 def get_default_book_cover_url():

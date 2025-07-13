@@ -45,45 +45,59 @@ def process_bookfile_async(bookfile_id, user_id=None):
 @shared_task
 def translate_chapter_async(chapter_id, target_language_code):
     """
-    Hybrid approach: Single task that handles the entire translation process
-    Reduces database queries and simplifies error handling
+    Asynchronously translate a chapter to a target language using LLM service.
     """
     try:
-        # Get objects once with optimized queries
-        chapter = Chapter.objects.select_related(
-            "original_chapter", "book", "language"
-        ).get(id=chapter_id)
+        from django.contrib.auth import get_user_model
+        from llm_integration.services import LLMTranslationService
+
+        # Get the chapter and target language
+        chapter = Chapter.objects.get(id=chapter_id)
         target_language = Language.objects.get(code=target_language_code)
+        original_chapter = chapter.original_chapter or chapter
 
-        # Validate original chapter exists
-        original_chapter = chapter.original_chapter
-        if not original_chapter:
-            raise ValueError("No original chapter found for translation")
+        # Initialize LLM service
+        llm_service = LLMTranslationService()
 
-        # Update chapter status to indicate translation is in progress
+        # Update status to translating
         chapter.status = "translating"
         chapter.save()
 
-        logger.info(
-            f"Starting translation for chapter {chapter_id} to {target_language_code}"
-        )
-
-        # Initialize LLM service once
-        llm_service = LLMTranslationService()
+        # Create changelog entry to track translation progress
+        try:
+            content_type = ContentType.objects.get_for_model(Chapter)
+            ChangeLog.objects.create(
+                content_type=content_type,
+                original_object_id=original_chapter.id,
+                changed_object_id=chapter.id,
+                user=None,  # System-initiated translation
+                change_type="translation",
+                status="in_progress",
+                notes=f"AI translation started from {original_chapter.get_effective_language().name if original_chapter.get_effective_language() else 'Unknown'} to {target_language.name}",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create changelog entry for chapter {chapter_id}: {str(e)}")
 
         # Step 1: Translate title
         logger.info(f"Translating title for chapter {chapter_id}")
+        original_title = original_chapter.title
         translated_title = llm_service.translate_text(
-            original_chapter.title, target_language_code
+            original_title, target_language_code
         )
         chapter.title = translated_title
 
         # Step 2: Translate content
         logger.info(f"Translating content for chapter {chapter_id}")
+        original_raw_content = original_chapter.get_raw_content()  # Use raw content from S3
         translated_content = llm_service.translate_chapter(
-            original_chapter.content, target_language_code
+            original_raw_content, target_language_code
         )
-        chapter.content = translated_content
+        
+        # Save translated content to S3
+        chapter.save_raw_content(
+            translated_content, 
+            summary=f"AI translation from {original_chapter.get_effective_language().name if original_chapter.get_effective_language() else 'Unknown'} to {target_language.name}"
+        )
 
         # Step 3: Translate abstract (if it exists)
         logger.info(f"Translating metadata for chapter {chapter_id}")
@@ -96,7 +110,7 @@ def translate_chapter_async(chapter_id, target_language_code):
 
         # Step 4: Extract key terms from translated content
         translated_key_terms = llm_service.extract_key_terms(
-            chapter.content, target_language_code
+            translated_content, target_language_code
         )
         chapter.key_terms = translated_key_terms
 

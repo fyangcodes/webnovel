@@ -26,8 +26,13 @@ class ChapterForm(forms.ModelForm):
         # Set default values for auto-generated fields
         if not self.instance.pk:  # Only for new instances
             self.instance.key_terms = []
-            # Ensure chapter_number is None for new instances so AutoIncrementingPositiveIntegerField can handle it
             self.instance.chapter_number = None
+        
+        # Load raw content from S3 if available
+        if self.instance.pk and hasattr(self.instance, 'get_raw_content'):
+            raw_content = self.instance.get_raw_content()
+            if raw_content:
+                self.fields['content'].initial = raw_content
 
     def clean_active_at(self):
         active_at = self.cleaned_data.get("active_at")
@@ -45,14 +50,32 @@ class ChapterForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        
         # Ensure key_terms is set to empty list if not provided
         if not hasattr(instance, 'key_terms') or instance.key_terms is None:
             instance.key_terms = []
+        
         # Ensure chapter_number is None for new instances
         if not instance.pk and (not hasattr(instance, 'chapter_number') or instance.chapter_number is None):
             instance.chapter_number = None
+        
         if commit:
+            # Save the instance first to get an ID
             instance.save()
+            
+            # Save raw content to S3
+            content_text = self.cleaned_data.get('content', '')
+            if content_text:
+                try:
+                    instance.save_raw_content(
+                        content_text, 
+                        user=getattr(self, 'user', None),
+                        summary="Content updated via form"
+                    )
+                except Exception as e:
+                    # Log error but don't fail the form save
+                    print(f"Error saving raw content to S3: {e}")
+        
         return instance
 
 

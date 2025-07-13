@@ -88,7 +88,8 @@ class ChapterAdmin(admin.ModelAdmin):
         "slug", 
         "word_count", 
         "char_count", 
-        "content_file_path",
+        "structured_content_file_path",
+        "raw_content_file_path",
         "created_at", 
         "updated_at",
         "structured_content_preview",
@@ -105,7 +106,7 @@ class ChapterAdmin(admin.ModelAdmin):
         (
             "Structured Content",
             {
-                "fields": ("paragraph_style", "content_file_path", "structured_content_preview"),
+                "fields": ("paragraph_style", "structured_content_file_path", "raw_content_file_path", "structured_content_preview"),
                 "description": "Configure how content is parsed and stored in structured format."
             },
         ),

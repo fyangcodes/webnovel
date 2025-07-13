@@ -14,8 +14,12 @@ File Organization Structure:
         │   └── cover_thumbnail.jpg
         └── chapters/
             ├── 1/
-            │   ├── content_v0.json   # Chapter content versions
-            │   ├── content_v1.json
+            │   ├── content/
+            │   │   └── raw_v1.json   # Chapter content versions
+            │   │   └── raw_v2.json
+            │   │   └── structured_v1.json
+            │   │   └── structured_v2.json
+            │   │   └── structured_v3.json
             │   ├── image/            # Chapter images
             │   │   ├── sunset.jpg
             │   │   └── character_portrait.png
@@ -26,9 +30,12 @@ File Organization Structure:
             │   └── document/         # Chapter documents
             │       └── chapter_notes.pdf
             └── 2/
-                ├── content_v0.json
+                ├── content/
+                │   └── raw_v1.json
+                │   └── structured_v1.json
                 └── image/
                     └── chapter_illustration.jpg
+
 
 Benefits of Self-Contained Organization:
 - Easy backup/restore of entire books
@@ -43,6 +50,8 @@ import json
 import os
 import mimetypes
 import re
+import uuid
+from datetime import datetime
 
 from django.conf import settings
 from django.core.validators import FileExtensionValidator, RegexValidator
@@ -77,6 +86,59 @@ IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"]
 AUDIO_EXTENSIONS = ["mp3", "wav", "ogg", "m4a", "flac", "aac"]
 VIDEO_EXTENSIONS = ["mp4", "avi", "mov", "wmv", "flv", "webm", "mkv"]
 DOCUMENT_EXTENSIONS = ["pdf", "doc", "docx", "txt", "rtf", "odt"]
+
+
+def generate_unique_filename(base_path, filename):
+    """
+    Generate a unique filename to prevent overwrites on S3.
+    
+    Args:
+        base_path: The base directory path
+        filename: The original filename
+        
+    Returns:
+        str: A unique filename with timestamp and/or counter
+    """
+    # Split filename into name and extension
+    name, ext = os.path.splitext(filename)
+    
+    # Generate timestamp for uniqueness
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create the full path
+    full_path = f"{base_path}/{name}_{timestamp}{ext}"
+    
+    # Check if file exists, if so, add a counter
+    counter = 1
+    while default_storage.exists(full_path):
+        full_path = f"{base_path}/{name}_{timestamp}_{counter}{ext}"
+        counter += 1
+        # Prevent infinite loops
+        if counter > 1000:
+            # If we hit 1000, use UUID as fallback
+            unique_id = str(uuid.uuid4())[:8]
+            full_path = f"{base_path}/{name}_{timestamp}_{unique_id}{ext}"
+            break
+    
+    return full_path
+
+
+def book_file_upload_to(instance, filename):
+    """Generate upload path for book files with duplicate handling"""
+    base_path = instance.book.get_book_files_directory()
+    return generate_unique_filename(base_path, filename)
+
+
+def chapter_media_upload_to(instance, filename):
+    """Generate organized upload path for chapter media with duplicate handling"""
+    base_path = instance.chapter.get_chapter_media_directory(instance.media_type)
+    return generate_unique_filename(base_path, filename)
+
+
+def book_cover_upload_to(instance, filename):
+    """Generate upload path for book cover images with duplicate handling"""
+    base_path = f"{instance.get_book_directory()}/covers"
+    return generate_unique_filename(base_path, filename)
 
 
 class TimeStampedModel(models.Model):
@@ -163,7 +225,7 @@ class Book(TimeStampedModel):
     isbn = models.CharField(max_length=20, blank=True, null=True)
     description = models.TextField(blank=True)
     cover_image = models.ImageField(
-        upload_to="book_cover_upload_to", blank=True, null=True
+        upload_to=book_cover_upload_to, blank=True, null=True
     )
     status = models.CharField(
         max_length=20,
@@ -268,11 +330,6 @@ class Book(TimeStampedModel):
         """Get the directory for book thumbnails"""
         return f"books/{self.id}/thumbnails"
 
-    @staticmethod
-    def book_cover_upload_to(instance, filename):
-        """Generate upload path for book cover images"""
-        return f"{instance.get_book_directory()}/cover/{filename}"
-
     def get_cover_image_url(self, fallback_to_default=True):
         """Get the cover image URL with a fallback to the default image"""
         if self.cover_image:
@@ -300,9 +357,12 @@ class Book(TimeStampedModel):
 
 
 class ChapterContentMixin(models.Model):
-    content = models.TextField()
-    content_file_path = models.CharField(
-        max_length=255, blank=True, help_text="Path to JSON content file"
+    content = models.TextField(blank=True)  # Keep for backward compatibility
+    structured_content_file_path = models.CharField(
+        max_length=255, blank=True, help_text="Path to structured content JSON file"
+    )
+    raw_content_file_path = models.CharField(
+        max_length=255, blank=True, help_text="Path to raw content JSON file"
     )
     paragraph_style = models.CharField(
         max_length=20,
@@ -322,17 +382,20 @@ class ChapterContentMixin(models.Model):
         """Get the base directory for this chapter's content files."""
         book_id = self.book.id
         chapter_id = self.id
-        return f"books/{book_id}/chapters/{chapter_id}"
+        return f"books/{book_id}/chapters/{chapter_id}/content"
 
-    def list_content_versions(self):
-        """List all versioned JSON files for this chapter.
+    def _list_content_versions_generic(self, content_type, base_dir):
+        """Generic method to list versioned content files for both structured and raw content.
+
+        Args:
+            content_type: Either 'structured' or 'raw'
+            base_dir: Base directory path
 
         Returns:
             dict: Dictionary with version numbers as keys and filenames as values.
-                  Example: {0: 'content_v0.json', 1: 'content_v1.json'}
+                  Example: {0: 'structured_v0.json', 1: 'structured_v1.json'}
         """
-        base_dir = self.get_content_base_directory()
-        pattern = re.compile(rf"content_v(\d+)\.json")
+        pattern = re.compile(rf"{content_type}_v(\d+)\.json")
 
         try:
             # For S3 storage, we need to handle the flat structure differently
@@ -349,25 +412,31 @@ class ChapterContentMixin(models.Model):
                             version_files[version_num] = f
                 except Exception:
                     # Fallback for S3 or other storage backends
-                    version_files = self._list_versions_s3_fallback(base_dir, pattern)
+                    version_files = self._list_versions_s3_fallback_generic(
+                        base_dir, pattern
+                    )
             else:
                 # Fallback for storage backends that don't support listdir
-                version_files = self._list_versions_s3_fallback(base_dir, pattern)
+                version_files = self._list_versions_s3_fallback_generic(
+                    base_dir, pattern
+                )
         except Exception as e:
             print(f"Warning: Error listing files in {base_dir}: {e}")
             version_files = {}
 
         return version_files
 
-    def _list_versions_s3_fallback(self, base_dir, pattern):
-        """Fallback method for listing versions that works with S3 storage"""
+    def _list_versions_s3_fallback_generic(self, base_dir, pattern):
+        """Generic fallback method for listing versions that works with S3 storage"""
         version_files = {}
 
         try:
             # For S3, we need to check if files exist by trying to access them
             # Start with version 0 and check up to a reasonable limit
             for version in range(100):  # Limit to prevent infinite loops
-                filename = f"content_v{version}.json"
+                # Extract content type from pattern
+                content_type = pattern.pattern.split("_")[0].split("(")[-1]
+                filename = f"{content_type}_v{version}.json"
                 file_path = f"{base_dir}/{filename}"
 
                 if default_storage.exists(file_path):
@@ -381,6 +450,26 @@ class ChapterContentMixin(models.Model):
             print(f"Warning: Error in S3 fallback listing for {base_dir}: {e}")
 
         return version_files
+
+    def list_content_versions(self):
+        """List all versioned JSON files for structured content.
+
+        Returns:
+            dict: Dictionary with version numbers as keys and filenames as values.
+                  Example: {0: 'structured_v0.json', 1: 'structured_v1.json'}
+        """
+        base_dir = self.get_content_base_directory()
+        return self._list_content_versions_generic("structured", base_dir)
+
+    def list_raw_content_versions(self):
+        """List all versioned JSON files for raw content.
+
+        Returns:
+            dict: Dictionary with version numbers as keys and filenames as values.
+                  Example: {0: 'raw_v0.json', 1: 'raw_v1.json'}
+        """
+        base_dir = self.get_content_base_directory()
+        return self._list_content_versions_generic("raw", base_dir)
 
     def get_content_file_path(self, next_version=False):
         """Return the canonical versioned file path for this chapter's structured content."""
@@ -398,28 +487,65 @@ class ChapterContentMixin(models.Model):
         if next_version:
             latest_version += 1
 
-        return f"{base_dir}/content_v{latest_version}.json"
+        return f"{base_dir}/structured_v{latest_version}.json"
 
     def get_content_file_path_for_version(self, version):
-        """Get the file path for a specific version."""
+        """Get the file path for a specific structured content version."""
         base_dir = self.get_content_base_directory()
-        return f"{base_dir}/content_v{version}.json"
+        return f"{base_dir}/structured_v{version}.json"
 
-    def save_structured_content(self, structured_content, user=None, summary=""):
-        """Save structured content to a new versioned JSON file and log the change."""
-        file_path = self.get_content_file_path(next_version=True)
+    def get_raw_content_file_path(self, next_version=False):
+        """Get path for raw content JSON file"""
+        base_dir = self.get_content_base_directory()
+        version_files = self.list_raw_content_versions()
+
+        if not version_files:
+            latest_version = 0
+        else:
+            latest_version = max(version_files.keys())
+
+        if next_version:
+            latest_version += 1
+
+        return f"{base_dir}/raw_v{latest_version}.json"
+
+    def get_raw_content_file_path_for_version(self, version):
+        """Get the file path for a specific raw content version."""
+        base_dir = self.get_content_base_directory()
+        return f"{base_dir}/raw_v{version}.json"
+
+    def _save_content_generic(self, content_data, content_type, user=None, summary=""):
+        """Generic method to save content to JSON file.
+
+        Args:
+            content_data: The content data to save
+            content_type: Either 'structured' or 'raw'
+            user: User who made the change
+            summary: Summary of the change
+        """
+        if content_type == "structured":
+            file_path = self.get_content_file_path(next_version=True)
+        else:  # raw
+            file_path = self.get_raw_content_file_path(next_version=True)
 
         try:
             # Let Django's storage handle directory creation
-            json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
+            json_content = json.dumps(content_data, indent=2, ensure_ascii=False)
             content_file = ContentFile(json_content.encode("utf-8"))
 
             # Save to storage
             saved_path = default_storage.save(file_path, content_file)
 
             # Update the database record
-            self.content_file_path = file_path
-            self.save(update_fields=["content_file_path"])
+            if content_type == "structured":
+                self.structured_content_file_path = file_path
+                self.save(update_fields=["structured_content_file_path"])
+            else:  # raw
+                self.raw_content_file_path = file_path
+                self.content = content_data.get(
+                    "content", ""
+                )  # Keep for backward compatibility
+                self.save(update_fields=["raw_content_file_path", "content"])
 
             # Log the change
             ChangeLog.objects.create(
@@ -429,28 +555,118 @@ class ChapterContentMixin(models.Model):
                 user=user,
                 change_type="edit",
                 status="completed",
-                notes=summary or "Structured content updated",
+                notes=summary or f"{content_type.title()} content updated",
                 diff="",  # Optionally add a diff
             )
 
         except Exception as e:
-            print(f"Error saving structured content to {file_path}: {e}")
+            print(f"Error saving {content_type} content to {file_path}: {e}")
             raise
+
+    def save_structured_content(self, structured_content, user=None, summary=""):
+        """Save structured content to a new versioned JSON file and log the change."""
+        self._save_content_generic(structured_content, "structured", user, summary)
+
+    def save_raw_content(self, content_text, user=None, summary=""):
+        """Save raw content to JSON file with metadata"""
+        content_data = {
+            "content": content_text,
+            "word_count": len(content_text.split()),
+            "char_count": len(content_text),
+            "language": (
+                self.get_effective_language().code
+                if self.get_effective_language()
+                else None
+            ),
+            "saved_at": timezone.now().isoformat(),
+            "user_id": user.id if user else None,
+            "summary": summary,
+            "version": len(self.list_raw_content_versions()) + 1,
+        }
+
+        self._save_content_generic(content_data, "raw", user, summary)
+
+    def _get_content_generic(self, content_type):
+        """Generic method to load content from JSON file.
+
+        Args:
+            content_type: Either 'structured' or 'raw'
+
+        Returns:
+            The loaded content data
+        """
+        if content_type == "structured":
+            file_path = self.structured_content_file_path
+        else:  # raw
+            file_path = self.raw_content_file_path
+
+        # Use the database path (authoritative source)
+        if not file_path:
+            return (
+                [] if content_type == "structured" else ""
+            )  # Return appropriate fallback
+
+        if not default_storage.exists(file_path):
+            return (
+                [] if content_type == "structured" else ""
+            )  # Return appropriate fallback
+
+        try:
+            with default_storage.open(file_path, "r") as f:
+                data = json.load(f)
+                if content_type == "structured":
+                    return data
+                else:  # raw
+                    return data.get("content", "")
+        except (json.JSONDecodeError, IOError):
+            return (
+                [] if content_type == "structured" else ""
+            )  # Return appropriate fallback
 
     def get_structured_content(self):
         """Load structured content from JSON file"""
-        # Use the database path (authoritative source)
-        if not self.content_file_path:
-            return []  # Return empty list as fallback
+        return self._get_content_generic("structured")
 
-        if not default_storage.exists(self.content_file_path):
-            return []  # Return empty list as fallback
+    def get_raw_content(self):
+        """Get raw content from JSON file or database fallback"""
+        raw_content = self._get_content_generic("raw")
+        if raw_content:
+            return raw_content
 
-        try:
-            with default_storage.open(self.content_file_path, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return []  # Return empty list as fallback
+        # Fallback to database content
+        return self.content or ""
+
+    def get_raw_content_metadata(self):
+        """Get raw content metadata (word count, language, etc.)"""
+        if self.raw_content_file_path and default_storage.exists(
+            self.raw_content_file_path
+        ):
+            try:
+                with default_storage.open(self.raw_content_file_path, "r") as f:
+                    data = json.load(f)
+                    return {
+                        "word_count": data.get("word_count", 0),
+                        "char_count": data.get("char_count", 0),
+                        "language": data.get("language"),
+                        "saved_at": data.get("saved_at"),
+                        "version": data.get("version"),
+                    }
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Fallback to calculated values
+        content = self.get_raw_content()
+        return {
+            "word_count": len(content.split()),
+            "char_count": len(content),
+            "language": (
+                self.get_effective_language().code
+                if self.get_effective_language()
+                else None
+            ),
+            "saved_at": None,
+            "version": None,
+        }
 
     def _parse_legacy_content(self):
         """Parse legacy content based on paragraph style setting"""
@@ -1161,7 +1377,9 @@ class ChapterAIMixin(models.Model):
 
 
 # Refactored Chapter model
-class Chapter(TimeStampedModel, ChapterMediaMixin, ChapterScheduleMixin, ChapterAIMixin):
+class Chapter(
+    TimeStampedModel, ChapterMediaMixin, ChapterScheduleMixin, ChapterAIMixin
+):
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     title = models.CharField(max_length=255)
     slug = models.CharField(
@@ -1231,6 +1449,12 @@ class Chapter(TimeStampedModel, ChapterMediaMixin, ChapterScheduleMixin, Chapter
         """Get the effective language of this chapter (inherits from book if not specified)"""
         return self.language or self.book.language
 
+    def get_chapter_media_directory(self, media_type):
+        """Get the directory for chapter media files of a specific type"""
+        book_id = self.book.id
+        chapter_id = self.id
+        return f"books/{book_id}/chapters/{chapter_id}/{media_type}"
+
 
 class ChapterMedia(TimeStampedModel):
     """Generalized model for storing various media types organized by book and chapter"""
@@ -1243,7 +1467,7 @@ class ChapterMedia(TimeStampedModel):
         help_text="Type of media content",
     )
     file = models.FileField(
-        upload_to="chapter_media_upload_to",
+        upload_to=chapter_media_upload_to,
         validators=[
             FileExtensionValidator(
                 allowed_extensions=IMAGE_EXTENSIONS
@@ -1280,19 +1504,6 @@ class ChapterMedia(TimeStampedModel):
     processing_error = models.TextField(
         blank=True, help_text="Error message if processing failed"
     )
-
-    # Thumbnail for video/audio (optional)
-    thumbnail = models.ImageField(
-        upload_to="books/book_thumbnails/",
-        blank=True,
-        null=True,
-        help_text="Thumbnail image for video/audio content",
-    )
-
-    def chapter_media_upload_to(instance, filename):
-        """Generate organized upload path for chapter media"""
-        # Preserve original filename while organizing by media type
-        return f"{instance.chapter.get_chapter_media_directory(instance.media_type)}/{filename}"
 
     class Meta:
         ordering = ["position"]
@@ -1449,7 +1660,7 @@ class BookFile(TimeStampedModel):
 
     book = models.ForeignKey("Book", on_delete=models.CASCADE, related_name="files")
     file = models.FileField(
-        upload_to="book_file_upload_to",
+        upload_to=book_file_upload_to,
         validators=[
             FileExtensionValidator(allowed_extensions=["pdf", "txt", "docx", "epub"])
         ],
@@ -1522,13 +1733,6 @@ class BookFile(TimeStampedModel):
     @property
     def is_failed(self):
         return self.status == "failed"
-
-    @staticmethod
-    def book_file_upload_to(instance, filename):
-        """Generate upload path for book files"""
-        # instance is a BookFile object
-        # instance.book is the related Book object
-        return f"{instance.book.get_book_files_directory()}/{filename}"
 
 
 def get_default_book_cover_url():
