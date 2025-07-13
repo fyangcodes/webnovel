@@ -357,7 +357,6 @@ class Book(TimeStampedModel):
 
 
 class ChapterContentMixin(models.Model):
-    content = models.TextField(blank=True)  # Keep for backward compatibility
     structured_content_file_path = models.CharField(
         max_length=255, blank=True, help_text="Path to structured content JSON file"
     )
@@ -542,10 +541,7 @@ class ChapterContentMixin(models.Model):
                 self.save(update_fields=["structured_content_file_path"])
             else:  # raw
                 self.raw_content_file_path = file_path
-                self.content = content_data.get(
-                    "content", ""
-                )  # Keep for backward compatibility
-                self.save(update_fields=["raw_content_file_path", "content"])
+                self.save(update_fields=["raw_content_file_path"])
 
             # Log the change
             ChangeLog.objects.create(
@@ -633,8 +629,8 @@ class ChapterContentMixin(models.Model):
         if raw_content:
             return raw_content
 
-        # Fallback to database content
-        return self.content or ""
+        # No database content fallback since content field was removed
+        return ""
 
     def get_raw_content_metadata(self):
         """Get raw content metadata (word count, language, etc.)"""
@@ -679,7 +675,8 @@ class ChapterContentMixin(models.Model):
 
     def _parse_single_newline(self):
         """Parse by single newlines"""
-        paragraphs = self.content.split("\n")
+        raw_content = self.get_raw_content()
+        paragraphs = raw_content.split("\n")
         structured_content = []
 
         for paragraph in paragraphs:
@@ -692,7 +689,8 @@ class ChapterContentMixin(models.Model):
 
     def _parse_double_newline(self):
         """Parse by double newlines"""
-        paragraphs = self.content.split("\n\n")
+        raw_content = self.get_raw_content()
+        paragraphs = raw_content.split("\n\n")
         structured_content = []
 
         for content in paragraphs:
@@ -703,9 +701,10 @@ class ChapterContentMixin(models.Model):
 
     def _parse_auto_detect(self):
         """Auto-detect paragraph style"""
+        raw_content = self.get_raw_content()
         # Count single vs double newlines
-        single_count = self.content.count("\n")
-        double_count = self.content.count("\n\n")
+        single_count = raw_content.count("\n")
+        double_count = raw_content.count("\n\n")
 
         # If more double newlines, use double newline parsing
         if double_count > single_count / 4:  # Threshold for detection
@@ -779,7 +778,7 @@ class ChapterContentMixin(models.Model):
             return True
 
 
-class ChapterMediaMixin(ChapterContentMixin):
+class ChapterContentMediaMixin(ChapterContentMixin):
     class Meta:
         abstract = True
 
@@ -1378,7 +1377,7 @@ class ChapterAIMixin(models.Model):
 
 # Refactored Chapter model
 class Chapter(
-    TimeStampedModel, ChapterMediaMixin, ChapterScheduleMixin, ChapterAIMixin
+    TimeStampedModel, ChapterContentMediaMixin, ChapterScheduleMixin, ChapterAIMixin
 ):
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     title = models.CharField(max_length=255)
@@ -1424,8 +1423,6 @@ class Chapter(
         super().clean()
         if not self.title:
             raise ValidationError("Title is required")
-        if not self.content:
-            raise ValidationError("Content is required")
         if self.original_chapter and self.original_chapter == self:
             raise ValidationError("A chapter cannot be its own original chapter")
         # Ensure slug is not empty (let Django's SlugField handle format validation)
@@ -1454,6 +1451,50 @@ class Chapter(
         book_id = self.book.id
         chapter_id = self.id
         return f"books/{book_id}/chapters/{chapter_id}/{media_type}"
+
+    def generate_excerpt(self, max_length=200):
+        """Generate an excerpt from the chapter content"""
+        raw_content = self.get_raw_content()
+        if not raw_content:
+            return ""
+        
+        # Clean up the content for excerpt generation
+        clean_content = raw_content.strip()
+        
+        # If content is shorter than max_length, return as is
+        if len(clean_content) <= max_length:
+            return clean_content
+        
+        # Find a good breaking point (sentence end, paragraph break, etc.)
+        # Try to break at sentence endings first
+        sentence_endings = ['.', '!', '?', '。', '！', '？']
+        for ending in sentence_endings:
+            pos = clean_content.rfind(ending, 0, max_length)
+            if pos > max_length * 0.7:  # Only break if we're at least 70% through
+                return clean_content[:pos + 1] + "..."
+        
+        # If no good sentence break, try paragraph break
+        pos = clean_content.rfind('\n\n', 0, max_length)
+        if pos > max_length * 0.7:
+            return clean_content[:pos].strip() + "..."
+        
+        # If no good paragraph break, try single newline
+        pos = clean_content.rfind('\n', 0, max_length)
+        if pos > max_length * 0.7:
+            return clean_content[:pos].strip() + "..."
+        
+        # Last resort: just truncate and add ellipsis
+        return clean_content[:max_length] + "..."
+
+    def update_content_statistics(self):
+        """Update word and character counts from raw content"""
+        raw_content = self.get_raw_content()
+        if raw_content:
+            self.word_count = len(raw_content.split())
+            self.char_count = len(raw_content)
+        else:
+            self.word_count = 0
+            self.char_count = 0
 
 
 class ChapterMedia(TimeStampedModel):
@@ -1733,6 +1774,27 @@ class BookFile(TimeStampedModel):
     @property
     def is_failed(self):
         return self.status == "failed"
+
+    def get_processing_status_display(self):
+        """Get a user-friendly status display"""
+        status_map = {
+            "pending": "Waiting to be processed",
+            "processing": "Processing file",
+            "chunking": "Dividing into chapters",
+            "translating": "Translating content",
+            "completed": "Processing completed",
+            "failed": "Processing failed",
+        }
+        return status_map.get(self.status, self.status)
+
+    def get_progress_percentage(self):
+        """Get progress as a percentage"""
+        if self.status == "completed":
+            return 100
+        elif self.status == "failed":
+            return 0
+        else:
+            return self.processing_progress
 
 
 def get_default_book_cover_url():

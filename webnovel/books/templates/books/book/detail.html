@@ -143,6 +143,83 @@
 </div>
 {% endif %}
 
+<!-- Uploaded Files Section -->
+{% if book.files.exists %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-file-upload"></i> Uploaded Files</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Status</th>
+                                <th>Progress</th>
+                                <th>Uploaded</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for book_file in book.files.all %}
+                            <tr>
+                                <td>
+                                    <strong>{{ book_file.file.name|slice:"-30:" }}</strong>
+                                    {% if book_file.description %}
+                                        <br><small class="text-muted">{{ book_file.description }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if book_file.status == "completed" %}
+                                        <span class="badge bg-success">{{ book_file.get_processing_status_display }}</span>
+                                    {% elif book_file.status == "failed" %}
+                                        <span class="badge bg-danger">{{ book_file.get_processing_status_display }}</span>
+                                    {% elif book_file.status == "processing" %}
+                                        <span class="badge bg-warning">{{ book_file.get_processing_status_display }}</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ book_file.get_processing_status_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if book_file.is_processing %}
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar" role="progressbar" 
+                                                 style="width: {{ book_file.get_progress_percentage }}%"
+                                                 aria-valuenow="{{ book_file.get_progress_percentage }}" 
+                                                 aria-valuemin="0" aria-valuemax="100">
+                                                {{ book_file.get_progress_percentage }}%
+                                            </div>
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <small class="text-muted">{{ book_file.created_at|date:"M d, Y H:i" }}</small>
+                                </td>
+                                <td>
+                                    {% if book_file.status == "failed" and book_file.error_message %}
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                data-bs-toggle="tooltip" 
+                                                title="{{ book_file.error_message }}">
+                                            <i class="fas fa-exclamation-triangle"></i> Error
+                                        </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="mt-4" data-book-id="{{ book.id }}">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3>Chapters</h3>

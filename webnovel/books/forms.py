@@ -11,14 +11,20 @@ class BookFileForm(forms.ModelForm):
 
 
 class ChapterForm(forms.ModelForm):
+    # Custom field for content that works with the new content system
+    content = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 20, "cols": 80}),
+        required=False,
+        help_text="Chapter content"
+    )
+    
     class Meta:
         model = Chapter
-        fields = ["title", "content", "status", "active_at"]
+        fields = ["title", "status", "active_at"]
         widgets = {
             "active_at": forms.DateTimeInput(
                 attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"
             ),
-            "content": forms.Textarea(attrs={"rows": 20, "cols": 80}),
         }
 
     def __init__(self, *args, **kwargs):

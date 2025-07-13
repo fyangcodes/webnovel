@@ -25,21 +25,135 @@ def process_bookfile_async(bookfile_id, user_id=None):
         except:
             pass
 
-    # 1. Extract text
-    text = extract_text_from_file(book_file.file)
-    # 2. Chunk into chapters (using your LLM or logic)
-    llm_service = LLMTranslationService()
-    chapters_data = llm_service.divide_into_chapters(text, book=book, user=user)
-    # 3. Create Chapter objects
-    for chapter_data in chapters_data:
-        Chapter.objects.create(
-            book=book,
-            title=chapter_data.get("title", "Chapter"),
-            content=chapter_data["text"],
-        )
-    # Optionally update book.total_chapters
-    book.total_chapters = book.chapters.count()
-    book.save()
+    try:
+        # Update status to processing
+        book_file.status = "processing"
+        book_file.processing_started_at = timezone.now()
+        book_file.save()
+
+        # 1. Extract text
+        logger.info(f"Extracting text from book file {bookfile_id}")
+        text = extract_text_from_file(book_file.file)
+        
+        # 2. Chunk into chapters (using your LLM or logic)
+        logger.info(f"Dividing text into chapters for book {book.id}")
+        llm_service = LLMTranslationService()
+        chapters_data = llm_service.divide_into_chapters(text, book=book, user=user)
+        
+        # 3. Create Chapter objects with proper content handling
+        logger.info(f"Creating {len(chapters_data)} chapters for book {book.id}")
+        for chapter_data in chapters_data:
+            title = chapter_data.get("title", "Chapter")
+            content_text = chapter_data["text"]
+            
+            # Create chapter without content first
+            chapter = Chapter.objects.create(
+                book=book,
+                title=title,
+                status="draft",
+                language=book.language,
+            )
+            
+            # Save raw content to S3
+            logger.info(f"Saving raw content to S3 for chapter {chapter.id}")
+            chapter.save_raw_content(
+                content_text, 
+                user=user,
+                summary="Initial content from book file upload"
+            )
+            
+            # Generate structured content from raw content
+            logger.info(f"Generating structured content for chapter {chapter.id}")
+            # Parse the raw content into structured format
+            structured_content = []
+            if chapter.paragraph_style == "single_newline":
+                paragraphs = content_text.split("\n")
+                for paragraph in paragraphs:
+                    if paragraph.strip():
+                        structured_content.append({"type": "text", "content": paragraph.strip()})
+            elif chapter.paragraph_style == "double_newline":
+                paragraphs = content_text.split("\n\n")
+                for paragraph in paragraphs:
+                    if paragraph.strip():
+                        structured_content.append({"type": "text", "content": paragraph.strip()})
+            else:  # auto_detect
+                # Count single vs double newlines
+                single_count = content_text.count("\n")
+                double_count = content_text.count("\n\n")
+                if double_count > single_count / 4:  # Threshold for detection
+                    paragraphs = content_text.split("\n\n")
+                    for paragraph in paragraphs:
+                        if paragraph.strip():
+                            structured_content.append({"type": "text", "content": paragraph.strip()})
+                else:
+                    paragraphs = content_text.split("\n")
+                    for paragraph in paragraphs:
+                        if paragraph.strip():
+                            structured_content.append({"type": "text", "content": paragraph.strip()})
+            
+            chapter.save_structured_content(
+                structured_content,
+                user=user,
+                summary="Initial structured content from book file upload"
+            )
+            
+            # Generate excerpt from raw content (first 200 characters or so)
+            logger.info(f"Generating excerpt for chapter {chapter.id}")
+            try:
+                chapter.excerpt = chapter.generate_excerpt(200)
+            except Exception as e:
+                logger.warning(f"Failed to generate excerpt for chapter {chapter.id}: {str(e)}")
+                # Fallback: simple truncation
+                chapter.excerpt = content_text[:200] + "..." if len(content_text) > 200 else content_text
+            
+            # Generate abstract and key terms
+            logger.info(f"Generating abstract and key terms for chapter {chapter.id}")
+            try:
+                abstract = llm_service.generate_chapter_abstract(
+                    content_text,
+                    source_chapter=chapter,
+                    user=user
+                )
+                key_terms = llm_service.extract_key_terms(
+                    content_text,
+                    source_chapter=chapter,
+                    user=user
+                )
+                chapter.abstract = abstract
+                chapter.key_terms = key_terms
+            except Exception as e:
+                logger.warning(f"Failed to generate abstract/key terms for chapter {chapter.id}: {str(e)}")
+            
+            # Update word and character counts
+            chapter.update_content_statistics()
+            
+            # Save all updates
+            chapter.save()
+            
+            logger.info(f"Successfully created chapter {chapter.id}: {title}")
+        
+        # Update book metadata
+        logger.info(f"Updating book metadata for book {book.id}")
+        book.update_metadata()
+        
+        # Mark book file as completed
+        book_file.status = "completed"
+        book_file.processing_completed_at = timezone.now()
+        book_file.processing_progress = 100
+        book_file.save()
+        
+        logger.info(f"Successfully processed book file {bookfile_id} - created {len(chapters_data)} chapters")
+        
+    except Exception as e:
+        logger.error(f"Error processing book file {bookfile_id}: {str(e)}")
+        
+        # Mark book file as failed
+        book_file.status = "failed"
+        book_file.error_message = str(e)
+        book_file.processing_completed_at = timezone.now()
+        book_file.save()
+        
+        raise
 
 
 @shared_task

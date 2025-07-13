@@ -164,8 +164,8 @@
                     <i class="fas fa-book-open text-secondary"></i> Content
                 </h3>
                 <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-outline-primary active" id="legacyToggle" onclick="toggleContent('legacy')">
-                        <i class="fas fa-file-text"></i> Legacy
+                    <button type="button" class="btn btn-outline-primary active" id="rawToggle" onclick="toggleContent('legacy')">
+                        <i class="fas fa-file-text"></i> Raw
                     </button>
                     <button type="button" class="btn btn-outline-secondary" id="structuredToggle" onclick="toggleContent('structured')">
                         <i class="fas fa-code"></i> Structured
@@ -173,9 +173,9 @@
                 </div>
             </div>
             <div class="card-body">
-                <!-- Legacy Content -->
-                <div id="legacyContent" class="chapter-content" style="font-size: 1.1em; line-height: 1.6;">
-                    {{ chapter.content|markdown }}
+                <!-- Raw Content -->
+                <div id="rawContent" class="chapter-content" style="font-size: 1.1em; line-height: 1.6; white-space: pre-wrap;">
+                    {{ chapter.get_raw_content|safe }}
                 </div>
                 
                 <!-- Structured Content -->
@@ -394,23 +394,23 @@
 
 <script>
 function toggleContent(type) {
-    const legacyContent = document.getElementById('legacyContent');
+    const rawContent = document.getElementById('rawContent');
     const structuredContent = document.getElementById('structuredContent');
-    const legacyToggle = document.getElementById('legacyToggle');
+    const rawToggle = document.getElementById('rawToggle');
     const structuredToggle = document.getElementById('structuredToggle');
     
     if (type === 'legacy') {
-        legacyContent.style.display = 'block';
+        rawContent.style.display = 'block';
         structuredContent.style.display = 'none';
-        legacyToggle.classList.remove('btn-outline-primary');
-        legacyToggle.classList.add('btn-primary');
+        rawToggle.classList.remove('btn-outline-primary');
+        rawToggle.classList.add('btn-primary');
         structuredToggle.classList.remove('btn-secondary');
         structuredToggle.classList.add('btn-outline-secondary');
     } else {
-        legacyContent.style.display = 'none';
+        rawContent.style.display = 'none';
         structuredContent.style.display = 'block';
-        legacyToggle.classList.remove('btn-primary');
-        legacyToggle.classList.add('btn-outline-primary');
+        rawToggle.classList.remove('btn-primary');
+        rawToggle.classList.add('btn-outline-primary');
         structuredToggle.classList.remove('btn-outline-secondary');
         structuredToggle.classList.add('btn-secondary');
     }

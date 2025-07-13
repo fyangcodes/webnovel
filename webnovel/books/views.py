@@ -129,8 +129,8 @@ class BookFileUploadView(LoginRequiredMixin, FormView):
         book_file.book = book
         book_file.owner = self.request.user
         book_file.save()
-        # Trigger async processing
-        process_bookfile_async.delay(book_file.id)
+        # Trigger async processing with user ID
+        process_bookfile_async.delay(book_file.id, user_id=self.request.user.id)
         return redirect("books:book_detail", pk=book.pk)
 
 
@@ -200,10 +200,11 @@ class ChapterDetailView(LoginRequiredMixin, DetailView):
 
         context["existing_translations"] = chapter.translations.all()
 
-        # Check if there are any completed translations (status = 'draft' and has content)
-        completed_translations = chapter.translations.filter(
-            status="draft", content__isnull=False
-        ).exclude(content="")
+        # Check if there are any completed translations (status = 'draft' and has raw content)
+        completed_translations = []
+        for translation in chapter.translations.filter(status="draft"):
+            if translation.get_raw_content():
+                completed_translations.append(translation)
         context["completed_translations"] = completed_translations
 
         return context
@@ -1101,7 +1102,7 @@ class ChapterChangelogView(LoginRequiredMixin, View):
             # In a more advanced implementation, you might want to store version history
             content = {
                 'title': chapter.title,
-                'content': chapter.content,
+                'content': chapter.get_raw_content(),
                 'abstract': chapter.abstract or '',
                 'key_terms': chapter.key_terms or [],
                 'language': chapter.language.name if chapter.language else 'Unknown',
@@ -1125,8 +1126,8 @@ class ChapterChangelogView(LoginRequiredMixin, View):
             
             # Generate diffs
             content_diff = self._generate_diff(
-                original_chapter.content,
-                translated_chapter.content,
+                original_chapter.get_raw_content(),
+                translated_chapter.get_raw_content(),
                 context_lines=3
             )
             
@@ -1193,7 +1194,7 @@ class ChapterDiffView(LoginRequiredMixin, View):
             
             # For now, we'll compare with the current version
             # In a more advanced implementation, you might want to store version history
-            current_content = chapter.content
+            current_content = chapter.get_raw_content()
             current_title = chapter.title
             
             # If specific versions are provided, compare them
@@ -1203,8 +1204,8 @@ class ChapterDiffView(LoginRequiredMixin, View):
                     version2 = Chapter.objects.get(pk=version2_id, book__owner=request.user)
                     
                     content_diff = self._generate_diff(
-                        version1.content,
-                        version2.content,
+                        version1.get_raw_content(),
+                        version2.get_raw_content(),
                         context_lines=3
                     )
                     
@@ -1627,7 +1628,7 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
                 chapter = version_obj["chapter"]
                 return {
                     'title': chapter.title,
-                    'content': chapter.content,
+                    'content': chapter.get_raw_content(),
                     'abstract': chapter.abstract or '',
                     'key_terms': chapter.key_terms or [],
                     'language': chapter.get_effective_language().name if chapter.get_effective_language() else 'Unknown',
@@ -1653,7 +1654,7 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
             # at each version or reconstruct it from the diff
             return {
                 'title': chapter.title,
-                'content': chapter.content,
+                'content': chapter.get_raw_content(),
                 'abstract': chapter.abstract or '',
                 'key_terms': chapter.key_terms or [],
                 'language': chapter.get_effective_language().name if chapter.get_effective_language() else 'Unknown',

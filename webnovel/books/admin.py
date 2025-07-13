@@ -16,7 +16,7 @@ class ChapterMediaInline(admin.TabularInline):
     model = ChapterMedia
     extra = 1
     readonly_fields = ['created_at', 'updated_at', 'file_size', 'mime_type', 'formatted_file_size', 'formatted_duration']
-    fields = ['media_type', 'file', 'title', 'caption', 'alt_text', 'position', 'duration', 'thumbnail']
+    fields = ['media_type', 'file', 'title', 'caption', 'alt_text', 'position', 'duration']
 
 
 class ChapterInline(admin.TabularInline):
