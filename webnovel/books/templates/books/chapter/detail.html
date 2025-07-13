@@ -1,5 +1,6 @@
 {% extends "books/partials/base_books.html" %}
 {% load static %}
+{% load books_extras %}
 
 {% block title %}{{ chapter.title }} - {{ chapter.book.title }}{% endblock %}
 
@@ -130,7 +131,7 @@
                     <div class="mb-4">
                         <h5><i class="fas fa-file-alt text-info"></i> Abstract</h5>
                         <div class="chapter-abstract p-3 bg-light rounded">
-                            {{ chapter.abstract|linebreaks }}
+                            {{ chapter.abstract|markdown }}
                         </div>
                     </div>
                     {% endif %}
@@ -174,7 +175,7 @@
             <div class="card-body">
                 <!-- Legacy Content -->
                 <div id="legacyContent" class="chapter-content" style="font-size: 1.1em; line-height: 1.6;">
-                    {{ chapter.content|linebreaks }}
+                    {{ chapter.content|markdown }}
                 </div>
                 
                 <!-- Structured Content -->
@@ -184,7 +185,7 @@
                             {% for element in structured_content %}
                                 {% if element.type == 'text' %}
                                     <div class="text-element mb-3">
-                                        {{ element.content|linebreaks }}
+                                        {{ element.content|markdown }}
                                     </div>
                                 {% elif element.type == 'image' %}
                                     <div class="media-element mb-4">
@@ -197,7 +198,7 @@
                                         {% endif %}
                                         {% if element.caption %}
                                             <div class="text-center mt-2">
-                                                <small class="text-muted">{{ element.caption }}</small>
+                                                <small class="text-muted">{{ element.caption|markdown }}</small>
                                             </div>
                                         {% endif %}
                                     </div>
@@ -215,7 +216,7 @@
                                         {% endif %}
                                         {% if element.caption %}
                                             <div class="text-center mt-2">
-                                                <small class="text-muted">{{ element.caption }}</small>
+                                                <small class="text-muted">{{ element.caption|markdown }}</small>
                                             </div>
                                         {% endif %}
                                     </div>
@@ -233,7 +234,7 @@
                                         {% endif %}
                                         {% if element.caption %}
                                             <div class="text-center mt-2">
-                                                <small class="text-muted">{{ element.caption }}</small>
+                                                <small class="text-muted">{{ element.caption|markdown }}</small>
                                             </div>
                                         {% endif %}
                                     </div>
@@ -244,7 +245,7 @@
                                                 <div class="card-body text-center">
                                                     <i class="fas fa-file-pdf fa-3x text-danger mb-2"></i>
                                                     <h5>Document</h5>
-                                                    <p class="text-muted">{{ element.caption|default:"Chapter document" }}</p>
+                                                    <p class="text-muted">{{ element.caption|default:"Chapter document"|markdown }}</p>
                                                     <a href="{{ element.file_path }}" class="btn btn-primary" target="_blank">
                                                         <i class="fas fa-download"></i> Download Document
                                                     </a>

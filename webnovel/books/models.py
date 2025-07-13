@@ -335,20 +335,50 @@ class ChapterContentMixin(models.Model):
         pattern = re.compile(rf"content_v(\d+)\.json")
 
         try:
-            if default_storage.exists(base_dir):
-                directories, files = default_storage.listdir(base_dir)
-                # Filter and extract version numbers in one pass
-                version_files = {}
-                for f in files:
-                    match = pattern.match(f)
-                    if match:
-                        version_num = int(match.group(1))
-                        version_files[version_num] = f
+            # For S3 storage, we need to handle the flat structure differently
+            # List all files with the base directory prefix
+            if hasattr(default_storage, "listdir"):
+                try:
+                    directories, files = default_storage.listdir(base_dir)
+                    # Filter and extract version numbers in one pass
+                    version_files = {}
+                    for f in files:
+                        match = pattern.match(f)
+                        if match:
+                            version_num = int(match.group(1))
+                            version_files[version_num] = f
+                except Exception:
+                    # Fallback for S3 or other storage backends
+                    version_files = self._list_versions_s3_fallback(base_dir, pattern)
             else:
-                version_files = {}
+                # Fallback for storage backends that don't support listdir
+                version_files = self._list_versions_s3_fallback(base_dir, pattern)
         except Exception as e:
             print(f"Warning: Error listing files in {base_dir}: {e}")
             version_files = {}
+
+        return version_files
+
+    def _list_versions_s3_fallback(self, base_dir, pattern):
+        """Fallback method for listing versions that works with S3 storage"""
+        version_files = {}
+
+        try:
+            # For S3, we need to check if files exist by trying to access them
+            # Start with version 0 and check up to a reasonable limit
+            for version in range(100):  # Limit to prevent infinite loops
+                filename = f"content_v{version}.json"
+                file_path = f"{base_dir}/{filename}"
+
+                if default_storage.exists(file_path):
+                    version_files[version] = filename
+                else:
+                    # If we haven't found any files yet, continue checking
+                    # If we've found some files and now hit a gap, we can stop
+                    if version_files:
+                        break
+        except Exception as e:
+            print(f"Warning: Error in S3 fallback listing for {base_dir}: {e}")
 
         return version_files
 
@@ -379,23 +409,33 @@ class ChapterContentMixin(models.Model):
         """Save structured content to a new versioned JSON file and log the change."""
         file_path = self.get_content_file_path(next_version=True)
 
-        # Let Django's storage handle directory creation
-        json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
-        default_storage.save(file_path, ContentFile(json_content.encode("utf-8")))
-        self.content_file_path = file_path
-        self.save(update_fields=["content_file_path"])
+        try:
+            # Let Django's storage handle directory creation
+            json_content = json.dumps(structured_content, indent=2, ensure_ascii=False)
+            content_file = ContentFile(json_content.encode("utf-8"))
 
-        # Log the change
-        ChangeLog.objects.create(
-            content_type=ContentType.objects.get_for_model(self),
-            original_object_id=self.id,
-            changed_object_id=self.id,
-            user=user,
-            change_type="edit",
-            status="completed",
-            notes=summary or "Structured content updated",
-            diff="",  # Optionally add a diff
-        )
+            # Save to storage
+            saved_path = default_storage.save(file_path, content_file)
+
+            # Update the database record
+            self.content_file_path = file_path
+            self.save(update_fields=["content_file_path"])
+
+            # Log the change
+            ChangeLog.objects.create(
+                content_type=ContentType.objects.get_for_model(self),
+                original_object_id=self.id,
+                changed_object_id=self.id,
+                user=user,
+                change_type="edit",
+                status="completed",
+                notes=summary or "Structured content updated",
+                diff="",  # Optionally add a diff
+            )
+
+        except Exception as e:
+            print(f"Error saving structured content to {file_path}: {e}")
+            raise
 
     def get_structured_content(self):
         """Load structured content from JSON file"""
@@ -953,7 +993,7 @@ class ChapterMediaMixin(ChapterContentMixin):
         return result
 
 
-class SchedulableMixin(models.Model):
+class ChapterScheduleMixin(models.Model):
     status = models.CharField(
         max_length=20,
         choices=[
@@ -1108,7 +1148,7 @@ class SchedulableMixin(models.Model):
         return queryset.filter(active_at__gt=timezone.now())
 
 
-class AIMetadataMixin(models.Model):
+class ChapterAIMixin(models.Model):
     abstract = models.TextField(
         blank=True, help_text="AI-generated summary for translation context"
     )
@@ -1121,7 +1161,7 @@ class AIMetadataMixin(models.Model):
 
 
 # Refactored Chapter model
-class Chapter(TimeStampedModel, ChapterMediaMixin, SchedulableMixin, AIMetadataMixin):
+class Chapter(TimeStampedModel, ChapterMediaMixin, ChapterScheduleMixin, ChapterAIMixin):
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     title = models.CharField(max_length=255)
     slug = models.CharField(

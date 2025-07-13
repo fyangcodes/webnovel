@@ -304,6 +304,7 @@ LOGGING = {
 # Custom User Model
 AUTH_USER_MODEL = "accounts.User"
 
+# AWS S3 settings
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
@@ -313,31 +314,24 @@ AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
 # Media files
 # MEDIA_URL = "/media/"
 # MEDIA_ROOT = BASE_DIR / "media"
-MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
-MEDIA_ROOT = "media/"
+#MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+#MEDIA_ROOT = "media/"
 
 STORAGES = {
     "default": {
         "BACKEND": "storages.backends.s3.S3Storage",
-        "OPTIONS": {
-            "bucket_name": AWS_STORAGE_BUCKET_NAME,
-            "region_name": AWS_S3_REGION_NAME,
-            "custom_domain": AWS_S3_CUSTOM_DOMAIN,
+        "OPTIONS": {            
             "location": "media",  # This ensures files go to media/ subdirectory
         },
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-        "OPTIONS": {},
     },
 }
 if not DEBUG:
     STORAGES["staticfiles"] = {
         "BACKEND": "storages.backends.s3.S3StaticStorage",
-        "OPTIONS": {
-            "bucket_name": AWS_STORAGE_BUCKET_NAME,
-            "region_name": AWS_S3_REGION_NAME,
-            "custom_domain": AWS_S3_CUSTOM_DOMAIN,
+        "OPTIONS": {            
             "location": "static",  # This ensures static files go to static/ subdirectory
         },
     }
