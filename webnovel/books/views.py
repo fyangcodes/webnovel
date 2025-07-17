@@ -715,9 +715,11 @@ class ChapterTranslationView(LoginRequiredMixin, View):
                 language=target_language,
                 chapter_number=original_chapter.chapter_number,
                 title=original_chapter.title,  # Use original title as placeholder
-                content=f"Translation in progress...\n\nOriginal chapter: {original_chapter.title}\nTarget language: {target_language.name}",
                 status="translating",
             )
+            
+            # Don't save initial content - let the async task handle all content creation
+            # This prevents creating multiple versions (v1 with placeholder, v2 with actual translation)
 
             # Create changelog entry for the translation
             self._create_changelog_entry(

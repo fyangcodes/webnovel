@@ -104,9 +104,9 @@ class TranslationAssignmentTest(TestCase):
         )
         self.chapter = Chapter.objects.create(
             book=self.book,
-            title='Test Chapter',
-            content='Test content'
+            title='Test Chapter'
         )
+        self.chapter.save_raw_content('Test content')
         self.language = Language.objects.create(
             code='es',
             name='Spanish',

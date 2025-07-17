@@ -107,6 +107,24 @@ if DATABASE_URL.startswith("sqlite"):
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+elif DATABASE_URL.startswith("postgres"):
+    # Parse PostgreSQL URL
+    import urllib.parse
+    url = urllib.parse.urlparse(DATABASE_URL)
+    
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": url.path[1:],  # Remove leading slash
+            "USER": url.username,
+            "PASSWORD": url.password,
+            "HOST": url.hostname,
+            "PORT": url.port or "5432",
+            "OPTIONS": {
+                "sslmode": "require" if not DEBUG else "disable",
+            },
+        }
+    }
 else:
     # For future use with other databases
     pass

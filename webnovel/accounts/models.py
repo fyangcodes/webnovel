@@ -136,12 +136,11 @@ class User(AbstractUser):
     def get_avatar_data(self):
         """Get avatar data as a dictionary for API responses"""
         return {
-            'url': self.get_avatar_url(),
-            'thumbnail_url': self.get_avatar_thumbnail_url(),
-            'is_default': not self.has_custom_avatar,
-            'custom_avatar_url': self.avatar.url if self.avatar else None,
-            'custom_thumbnail_url': self.avatar_thumbnail.url if self.avatar_thumbnail else None,
+            "url": self.get_avatar_url(),
+            "thumbnail_url": self.get_avatar_thumbnail_url(),
+            "is_default": not self.has_custom_avatar,
+            "custom_avatar_url": self.avatar.url if self.avatar else None,
+            "custom_thumbnail_url": (
+                self.avatar_thumbnail.url if self.avatar_thumbnail else None
+            ),
         }
-
-
-

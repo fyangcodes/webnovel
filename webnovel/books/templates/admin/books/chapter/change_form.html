@@ -112,6 +112,51 @@
         font-size: 12px;
         color: #6c757d;
     }
+    
+    /* Raw content field styling */
+    .field-raw_content {
+        background: #f8f9fa;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+    
+    .field-raw_content label {
+        font-weight: bold;
+        color: #007bff;
+        font-size: 14px;
+        margin-bottom: 10px;
+        display: block;
+    }
+    
+    .field-raw_content textarea {
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+    
+    .field-raw_content .help {
+        color: #6c757d;
+        font-style: italic;
+        margin-top: 5px;
+        font-size: 12px;
+    }
+    
+    .raw-content-info {
+        background: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        border-radius: 4px;
+        padding: 10px;
+        margin: 10px 0;
+        font-size: 12px;
+    }
+    
+    .raw-content-info strong {
+        color: #0056b3;
+    }
 </style>
 
 <script>
@@ -257,6 +302,59 @@ function updateTaskStatus(data) {
 function setTaskId(taskId) {
     currentTaskId = taskId;
 }
+
+// Raw content field enhancements
+document.addEventListener('DOMContentLoaded', function() {
+    const rawContentField = document.getElementById('id_raw_content');
+    if (rawContentField) {
+        // Add character count display
+        const charCountDiv = document.createElement('div');
+        charCountDiv.className = 'raw-content-info';
+        charCountDiv.innerHTML = `
+            <strong>Content Statistics:</strong><br>
+            Characters: <span id="char-count">0</span> | 
+            Words: <span id="word-count">0</span> | 
+            Lines: <span id="line-count">0</span>
+        `;
+        rawContentField.parentNode.appendChild(charCountDiv);
+        
+        // Update counts on input
+        function updateCounts() {
+            const content = rawContentField.value;
+            const charCount = content.length;
+            const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+            const lineCount = content ? content.split('\n').length : 0;
+            
+            document.getElementById('char-count').textContent = charCount;
+            document.getElementById('word-count').textContent = wordCount;
+            document.getElementById('line-count').textContent = lineCount;
+        }
+        
+        rawContentField.addEventListener('input', updateCounts);
+        updateCounts(); // Initial count
+        
+        // Add auto-save indicator
+        let saveTimeout;
+        const saveIndicator = document.createElement('div');
+        saveIndicator.className = 'raw-content-info';
+        saveIndicator.style.display = 'none';
+        saveIndicator.innerHTML = '<strong>Auto-saving...</strong>';
+        rawContentField.parentNode.appendChild(saveIndicator);
+        
+        rawContentField.addEventListener('input', function() {
+            clearTimeout(saveTimeout);
+            saveIndicator.style.display = 'block';
+            saveIndicator.innerHTML = '<strong>Auto-saving...</strong>';
+            
+            saveTimeout = setTimeout(function() {
+                saveIndicator.innerHTML = '<strong>Content saved!</strong>';
+                setTimeout(function() {
+                    saveIndicator.style.display = 'none';
+                }, 2000);
+            }, 1000);
+        });
+    }
+});
 </script>
 {% endblock %}
 
@@ -264,6 +362,22 @@ function setTaskId(taskId) {
 {{ block.super }}
 
 {% if original.pk %}
+<!-- Raw Content Information -->
+<div class="module aligned">
+    <h2>Raw Content System</h2>
+    <div class="raw-content-info">
+        <p><strong>How it works:</strong></p>
+        <ul>
+            <li>The <strong>Raw Content</strong> field above contains the actual text content of your chapter</li>
+            <li>This content is stored in a JSON file and can be parsed into structured content</li>
+            <li>When you save, the raw content is automatically saved to the JSON file</li>
+            <li>If you have a paragraph style set, structured content will be auto-regenerated</li>
+            <li>Use the actions below to manage structured content and media synchronization</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Structured Content Details -->
 <div class="module aligned">
     <h2>Structured Content Details</h2>
     

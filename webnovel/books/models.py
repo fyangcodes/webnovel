@@ -6,35 +6,27 @@ related to a book are stored within a book-specific directory structure.
 
 File Organization Structure:
     books/
-    └── {id}/
-        ├── files/                    # Book files (PDFs, manuscripts, etc.)
-        │   ├── original_manuscript.pdf
-        │   └── translation_draft.docx
-        ├── thumbnails/               # Book-level thumbnails
-        │   └── cover_thumbnail.jpg
-        └── chapters/
-            ├── 1/
-            │   ├── content/
-            │   │   └── raw_v1.json   # Chapter content versions
-            │   │   └── raw_v2.json
-            │   │   └── structured_v1.json
-            │   │   └── structured_v2.json
-            │   │   └── structured_v3.json
-            │   ├── image/            # Chapter images
-            │   │   ├── sunset.jpg
-            │   │   └── character_portrait.png
-            │   ├── audio/            # Chapter audio files
-            │   │   └── chapter_narration.mp3
-            │   ├── video/            # Chapter video files
-            │   │   └── battle_scene.mp4
-            │   └── document/         # Chapter documents
-            │       └── chapter_notes.pdf
-            └── 2/
-                ├── content/
-                │   └── raw_v1.json
-                │   └── structured_v1.json
-                └── image/
-                    └── chapter_illustration.jpg
+    ├── {bookmaster.id}/
+    │   ├── {book.id}_{book.language.code}/
+    │   │   ├── files/
+    │   │   ├── thumbnails/
+    │   │   └── chapters/
+    │   │       ├── {chapter.id}/
+    │   │       │   ├── content/
+    │   │       │   │   └── raw_v1.json
+    │   │       │   │   └── raw_v2.json
+    │   │       │   │   └── structured_v1.json
+    │   │       │   │   └── structured_v2.json
+    │   │       │   │   └── structured_v3.json
+    │   │       │   ├── image/
+    │   │       │   │   └── chapter_illustration.jpg
+    │   │       │   ├── audio/
+    │   │       │   │   └── chapter_narration.mp3
+    │   │       │   ├── video/
+    │   │       │   │   └── chapter_battle_scene.mp4
+    │   │       │   └── document/
+    │   │       │       └── chapter_notes.pdf
+
 
 
 Benefits of Self-Contained Organization:
@@ -61,9 +53,14 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.utils.text import slugify
 from django.templatetags.static import static
-from .fields import AutoIncrementingPositiveIntegerField
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+
+from .fields import AutoIncrementingPositiveIntegerField
+from .choices import RatingChoices, BookStatus, MediaType, ParagraphStyle
+from .constants import IMAGE_EXTENSIONS, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, FILE_EXTENSIONS
+
+from common.models import TimeStampedModel
 
 # Custom validator for Unicode slugs
 unicode_slug_validator = RegexValidator(
@@ -72,42 +69,26 @@ unicode_slug_validator = RegexValidator(
     code="invalid_slug",
 )
 
-# Media type choices for ChapterMedia
-MEDIA_TYPE_CHOICES = [
-    ("image", "Image"),
-    ("audio", "Audio"),
-    ("video", "Video"),
-    ("document", "Document"),
-    ("other", "Other"),
-]
-
-# File extension validators for different media types
-IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"]
-AUDIO_EXTENSIONS = ["mp3", "wav", "ogg", "m4a", "flac", "aac"]
-VIDEO_EXTENSIONS = ["mp4", "avi", "mov", "wmv", "flv", "webm", "mkv"]
-DOCUMENT_EXTENSIONS = ["pdf", "doc", "docx", "txt", "rtf", "odt"]
-
-
 def generate_unique_filename(base_path, filename):
     """
     Generate a unique filename to prevent overwrites on S3.
-    
+
     Args:
         base_path: The base directory path
         filename: The original filename
-        
+
     Returns:
         str: A unique filename with timestamp and/or counter
     """
     # Split filename into name and extension
     name, ext = os.path.splitext(filename)
-    
+
     # Generate timestamp for uniqueness
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     # Create the full path
     full_path = f"{base_path}/{name}_{timestamp}{ext}"
-    
+
     # Check if file exists, if so, add a counter
     counter = 1
     while default_storage.exists(full_path):
@@ -119,7 +100,7 @@ def generate_unique_filename(base_path, filename):
             unique_id = str(uuid.uuid4())[:8]
             full_path = f"{base_path}/{name}_{timestamp}_{unique_id}{ext}"
             break
-    
+
     return full_path
 
 
@@ -141,14 +122,6 @@ def book_cover_upload_to(instance, filename):
     return generate_unique_filename(base_path, filename)
 
 
-class TimeStampedModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        abstract = True
-
-
 class Language(TimeStampedModel):
     code = models.CharField(max_length=10, unique=True)  # e.g., 'zh-CN'
     name = models.CharField(max_length=50)  # e.g., 'Chinese (Simplified)'
@@ -158,29 +131,121 @@ class Language(TimeStampedModel):
         return self.name
 
 
-class Author(TimeStampedModel):
-    language = models.ForeignKey(
-        Language, on_delete=models.SET_NULL, null=True, blank=True
-    )
+class Nationality(TimeStampedModel):
+    code = models.CharField(max_length=10, unique=True)  # e.g., 'CN'
+    name = models.CharField(max_length=50)  # e.g., 'China'
+    local_name = models.CharField(max_length=50)  # e.g., '中国'
+
+    def __str__(self):
+        return self.name
+
+
+class AbstractMaster(TimeStampedModel):
     canonical_name = models.CharField(max_length=255)
-    localized_name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
 
     class Meta:
+        abstract = True
         ordering = ["canonical_name"]
         indexes = [
             models.Index(fields=["canonical_name"]),
-            models.Index(fields=["language"]),
         ]
 
     def __str__(self):
-        return f"{self.localized_name}"
+        return self.canonical_name
 
     def clean(self):
         from django.core.exceptions import ValidationError
 
         if not self.canonical_name:
             raise ValidationError("Canonical name is required")
+
+
+class AuthorMaster(AbstractMaster):
+    nationality = models.ForeignKey(
+        Nationality, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    birth_date = models.DateField(null=True, blank=True)
+    death_date = models.DateField(null=True, blank=True)
+    birth_place = models.CharField(max_length=255, null=True, blank=True)
+    death_place = models.CharField(max_length=255, null=True, blank=True)
+
+    class Meta:
+        ordering = ["canonical_name"]
+        indexes = [
+            models.Index(fields=["canonical_name"]),
+            models.Index(fields=["nationality"]),
+        ]
+
+
+class BookMaster(AbstractMaster):
+    author = models.ManyToManyField(AuthorMaster, related_name="books")
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="books",
+        null=True,
+        blank=True,
+    )
+    original_language = models.ForeignKey(
+        Language, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    pivot_language = models.ForeignKey(
+        Language, on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ["canonical_name"]
+        indexes = [
+            models.Index(fields=["canonical_name"]),
+            models.Index(fields=["author"]),
+            models.Index(fields=["owner"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        # set the original language to chinese if not set
+        if not self.original_language:
+            self.original_language = Language.objects.get(code="zh")
+        # set the pivot language to english if not set
+        if not self.pivot_language:
+            self.pivot_language = Language.objects.get(code="en")
+        super().save(*args, **kwargs)
+
+
+class ChapterMaster(AbstractMaster):
+    book_master = models.ForeignKey(
+        BookMaster, on_delete=models.CASCADE, related_name="chapter_masters"
+    )
+
+    class Meta:
+        ordering = ["canonical_name"]
+        indexes = [
+            models.Index(fields=["canonical_name"]),
+            models.Index(fields=["book_master"]),
+        ]
+
+
+class Author(TimeStampedModel):
+    master = models.ForeignKey(AuthorMaster, on_delete=models.CASCADE)
+    language = models.ForeignKey(
+        Language, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    localized_name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["master"]
+        indexes = [
+            models.Index(fields=["master"]),
+            models.Index(fields=["language"]),
+            models.Index(fields=["master", "language"]),
+        ]
+
+    def __str__(self):
+        return f"{self.localized_name} ({self.master.canonical_name})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
         if not self.localized_name:
             raise ValidationError("Localized name is required")
 
@@ -190,48 +255,28 @@ class Author(TimeStampedModel):
 
 
 class Book(TimeStampedModel):
-    STATUS_CHOICES = [
-        ("draft", "Draft"),
-        ("published", "Published"),
-        ("archived", "Archived"),
-        ("private", "Private"),
-        ("completed", "Completed"),
-        ("on_hold", "On Hold"),
-    ]
+
 
     title = models.CharField(max_length=255)
     slug = models.CharField(
         max_length=255, unique=True, blank=True, validators=[unicode_slug_validator]
     )
+    description = models.TextField(blank=True)
+    master = models.ForeignKey(
+        BookMaster, on_delete=models.CASCADE, related_name="books"
+    )
     language = models.ForeignKey(
         Language, on_delete=models.SET_NULL, null=True, blank=True
     )
-    author = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="books",
-        null=True,
-        blank=True,
-    )
-    original_book = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="translations",
-        help_text="Link to the original book if this is a translation.",
-    )
-    isbn = models.CharField(max_length=20, blank=True, null=True)
-    description = models.TextField(blank=True)
-    cover_image = models.ImageField(
-        upload_to=book_cover_upload_to, blank=True, null=True
-    )
     status = models.CharField(
         max_length=20,
-        choices=STATUS_CHOICES,
-        default="draft",
-        help_text="Book status (e.g., draft, published, etc.)",
+        choices=BookStatus.choices,
+        default=BookStatus.DRAFT,
+        help_text="Book status (e.g., draft, ongoing, completed, archived)",
+    )
+    is_published = models.BooleanField(default=False)
+    cover_image = models.ImageField(
+        upload_to=book_cover_upload_to, blank=True, null=True
     )
 
     # Metadata
@@ -250,19 +295,19 @@ class Book(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.title}"
+        return f"{self.title} ({self.master.canonical_name})"
 
     def clean(self):
         from django.core.exceptions import ValidationError
 
         if not self.title:
             raise ValidationError("Title is required")
-        if self.original_book and self.original_book == self:
-            raise ValidationError("A book cannot be its own original book")
 
     def save(self, *args, **kwargs):
         self.full_clean()
+
         if not self.slug:
+            # generate a slug from the title
             self.slug = slugify(self.title, allow_unicode=True)
             # Ensure uniqueness
             base_slug = self.slug
@@ -270,12 +315,6 @@ class Book(TimeStampedModel):
             while Book.objects.filter(slug=self.slug).exclude(pk=self.pk).exists():
                 self.slug = f"{base_slug}-{counter}"
                 counter += 1
-
-        # Set default language to first available language if none specified
-        if not self.language:
-            first_language = Language.objects.first()
-            if first_language:
-                self.language = first_language
 
         super().save(*args, **kwargs)
 
@@ -298,90 +337,86 @@ class Book(TimeStampedModel):
         )
 
     @property
-    def is_published(self):
-        return self.status == "published"
-
-    @property
-    def is_completed(self):
-        return self.status == "completed"
-
-    @property
-    def has_translations(self):
-        return self.translations.exists()
-
-    def get_translation(self, language):
-        """
-        Returns the translated book in the specified language.
-        Accepts either a Language instance or a language code (str).
-        """
-        if isinstance(language, str):
-            return self.translations.filter(language__code=language).first()
-        return self.translations.filter(language=language).first()
-
-    def get_book_directory(self):
+    def _root_directory(self):
         """Get the base directory for all book files"""
-        return f"books/{self.id}"
+        return f"books/{self.master.id}/{self.id}_{self.language.code}"
 
-    def get_book_files_directory(self):
+    @property
+    def files_directory(self):
         """Get the directory for book files (PDFs, etc.)"""
-        return f"books/{self.id}/files"
+        return f"{self._root_directory}/files"
 
-    def get_book_thumbnails_directory(self):
+    @property
+    def thumbnails_directory(self):
         """Get the directory for book thumbnails"""
-        return f"books/{self.id}/thumbnails"
+        return f"{self._root_directory}/thumbnails"
 
-    def get_cover_image_url(self, fallback_to_default=True):
-        """Get the cover image URL with a fallback to the default image"""
-        if self.cover_image:
-            return self.cover_image.url
-        elif fallback_to_default:
-            return static("images/default_book_cover.png")
-        else:
-            return None
+    @property
+    def chapters_directory(self):
+        """Get the directory for book chapters"""
+        return f"{self._root_directory}/chapters"
 
     @property
     def has_custom_cover(self):
         """Check if the book has a custom cover image (not the default)"""
         return bool(self.cover_image)
 
-    def get_cover_image_data(self):
-        """Get cover image data as a dictionary for API responses"""
-        return {
-            "url": self.get_cover_image_url(),
-            "is_default": not self.has_custom_cover,
-            "custom_image_url": self.cover_image.url if self.cover_image else None,
-        }
+    @property
+    def cover_image_url(self, fallback_to_default=True):
+        """Get the cover image URL with a fallback to the default image"""
+        if self.has_custom_cover:
+            return self.cover_image.url
+        elif fallback_to_default:
+            return static("images/default_book_cover.png")
+        else:
+            return None
 
 
 # --- MIXINS FOR CHAPTER ---
 
 
 class ChapterContentMixin(models.Model):
-    structured_content_file_path = models.CharField(
-        max_length=255, blank=True, help_text="Path to structured content JSON file"
-    )
     raw_content_file_path = models.CharField(
         max_length=255, blank=True, help_text="Path to raw content JSON file"
     )
+    structured_content_file_path = models.CharField(
+        max_length=255, blank=True, help_text="Path to structured content JSON file"
+    )
     paragraph_style = models.CharField(
         max_length=20,
-        choices=[
-            ("single_newline", "Single Newline"),
-            ("double_newline", "Double Newline"),
-            ("auto_detect", "Auto Detect"),
-        ],
-        default="auto_detect",
-        help_text="How to parse paragraphs from content",
+        choices=ParagraphStyle.choices,
+        default=ParagraphStyle.AUTO_DETECT,
+        help_text="How to parse paragraphs from raw content",
     )
 
     class Meta:
         abstract = True
 
-    def get_content_base_directory(self):
-        """Get the base directory for this chapter's content files."""
-        book_id = self.book.id
-        chapter_id = self.id
-        return f"books/{book_id}/chapters/{chapter_id}/content"
+
+    def _list_versions_s3_fallback_generic(self, base_dir, pattern):
+        """Generic fallback method for listing versions that works with S3 storage"""
+        version_files = {}
+
+        try:
+            # For S3, we need to check if files exist by trying to access them
+            # Start with version 0 and check up to a reasonable limit
+            for version in range(100):  # Limit to prevent infinite loops
+                # Extract content type from pattern
+                content_type = pattern.pattern.split("_")[0].split("(")[-1]
+                filename = f"{content_type}_v{version}.json"
+                file_path = f"{base_dir}/{filename}"
+
+                if default_storage.exists(file_path):
+                    version_files[version] = filename
+                else:
+                    # If we haven't found any files yet, continue checking
+                    # If we've found some files and now hit a gap, we can stop
+                    if version_files:
+                        break
+        except Exception as e:
+            print(f"Warning: Error in S3 fallback listing for {base_dir}: {e}")
+
+        return version_files
 
     def _list_content_versions_generic(self, content_type, base_dir):
         """Generic method to list versioned content files for both structured and raw content.
@@ -425,57 +460,35 @@ class ChapterContentMixin(models.Model):
 
         return version_files
 
-    def _list_versions_s3_fallback_generic(self, base_dir, pattern):
-        """Generic fallback method for listing versions that works with S3 storage"""
-        version_files = {}
-
-        try:
-            # For S3, we need to check if files exist by trying to access them
-            # Start with version 0 and check up to a reasonable limit
-            for version in range(100):  # Limit to prevent infinite loops
-                # Extract content type from pattern
-                content_type = pattern.pattern.split("_")[0].split("(")[-1]
-                filename = f"{content_type}_v{version}.json"
-                file_path = f"{base_dir}/{filename}"
-
-                if default_storage.exists(file_path):
-                    version_files[version] = filename
-                else:
-                    # If we haven't found any files yet, continue checking
-                    # If we've found some files and now hit a gap, we can stop
-                    if version_files:
-                        break
-        except Exception as e:
-            print(f"Warning: Error in S3 fallback listing for {base_dir}: {e}")
-
-        return version_files
-
-    def list_content_versions(self):
+    
+    @property
+    def structured_content_versions(self):
         """List all versioned JSON files for structured content.
 
         Returns:
             dict: Dictionary with version numbers as keys and filenames as values.
                   Example: {0: 'structured_v0.json', 1: 'structured_v1.json'}
         """
-        base_dir = self.get_content_base_directory()
+        base_dir = self.content_directory
         return self._list_content_versions_generic("structured", base_dir)
 
-    def list_raw_content_versions(self):
+    @property
+    def raw_content_versions(self):
         """List all versioned JSON files for raw content.
 
         Returns:
             dict: Dictionary with version numbers as keys and filenames as values.
                   Example: {0: 'raw_v0.json', 1: 'raw_v1.json'}
         """
-        base_dir = self.get_content_base_directory()
+        base_dir = self.content_directory
         return self._list_content_versions_generic("raw", base_dir)
 
-    def get_content_file_path(self, next_version=False):
+    def get_structured_content_file_path(self, next_version=False):
         """Return the canonical versioned file path for this chapter's structured content."""
-        base_dir = self.get_content_base_directory()
+        base_dir = self.content_directory
 
         # Get existing files as dictionary
-        version_files = self.list_content_versions()
+        version_files = self.structured_content_versions
 
         if not version_files:
             latest_version = 0
@@ -488,15 +501,15 @@ class ChapterContentMixin(models.Model):
 
         return f"{base_dir}/structured_v{latest_version}.json"
 
-    def get_content_file_path_for_version(self, version):
+    def get_structured_content_file_path_for_version(self, version):
         """Get the file path for a specific structured content version."""
-        base_dir = self.get_content_base_directory()
+        base_dir = self.content_directory
         return f"{base_dir}/structured_v{version}.json"
 
     def get_raw_content_file_path(self, next_version=False):
         """Get path for raw content JSON file"""
-        base_dir = self.get_content_base_directory()
-        version_files = self.list_raw_content_versions()
+        base_dir = self.content_directory
+        version_files = self.raw_content_versions
 
         if not version_files:
             latest_version = 0
@@ -510,7 +523,7 @@ class ChapterContentMixin(models.Model):
 
     def get_raw_content_file_path_for_version(self, version):
         """Get the file path for a specific raw content version."""
-        base_dir = self.get_content_base_directory()
+        base_dir = self.content_directory
         return f"{base_dir}/raw_v{version}.json"
 
     def _save_content_generic(self, content_data, content_type, user=None, summary=""):
@@ -570,14 +583,14 @@ class ChapterContentMixin(models.Model):
             "word_count": len(content_text.split()),
             "char_count": len(content_text),
             "language": (
-                self.get_effective_language().code
-                if self.get_effective_language()
+                self.language.code
+                if self.language
                 else None
             ),
             "saved_at": timezone.now().isoformat(),
             "user_id": user.id if user else None,
             "summary": summary,
-            "version": len(self.list_raw_content_versions()) + 1,
+            "version": len(self.raw_content_versions) + 1,
         }
 
         self._save_content_generic(content_data, "raw", user, summary)
@@ -656,8 +669,8 @@ class ChapterContentMixin(models.Model):
             "word_count": len(content.split()),
             "char_count": len(content),
             "language": (
-                self.get_effective_language().code
-                if self.get_effective_language()
+                self.language.code
+                if self.language
                 else None
             ),
             "saved_at": None,
@@ -1364,12 +1377,16 @@ class ChapterScheduleMixin(models.Model):
 
 
 class ChapterAIMixin(models.Model):
-    abstract = models.TextField(
-        blank=True, help_text="AI-generated summary for translation context"
+    rating = models.CharField(
+        max_length=5, choices=RatingChoices.choices, default=RatingChoices.EVERYONE
+    )
+    summary = models.TextField(
+        blank=True, help_text="Summary for translation context"
     )
     key_terms = models.JSONField(
         default=list, blank=True, help_text="Important terms for consistent translation"
     )
+
 
     class Meta:
         abstract = True
@@ -1379,25 +1396,18 @@ class ChapterAIMixin(models.Model):
 class Chapter(
     TimeStampedModel, ChapterContentMediaMixin, ChapterScheduleMixin, ChapterAIMixin
 ):
-    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     title = models.CharField(max_length=255)
     slug = models.CharField(
         max_length=255, blank=True, validators=[unicode_slug_validator]
     )
+    master = models.ForeignKey(
+        ChapterMaster, on_delete=models.CASCADE, related_name="chapters"
+    )
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
     language = models.ForeignKey(
         Language,
         on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
         help_text="Language of this chapter (inherits from book if not specified)",
-    )
-    original_chapter = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="translations",
-        help_text="Original chapter if this is a translation",
     )
     chapter_number = AutoIncrementingPositiveIntegerField(scope_field="book")
     excerpt = models.TextField(max_length=1000, blank=True)
@@ -1415,74 +1425,52 @@ class Chapter(
         ]
 
     def __str__(self):
-        return f"{self.title}"
+        return f"{self.title} ({self.master.canonical_name})"
 
     def clean(self):
         from django.core.exceptions import ValidationError
-
-        super().clean()
         if not self.title:
             raise ValidationError("Title is required")
-        if self.original_chapter and self.original_chapter == self:
-            raise ValidationError("A chapter cannot be its own original chapter")
-        # Ensure slug is not empty (let Django's SlugField handle format validation)
-        if self.slug and self.slug.strip() == "":
-            raise ValidationError("Slug cannot be empty")
 
-    def has_translations(self):
-        """Check if this chapter has translations"""
-        return self.translations.exists()
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.title, allow_unicode=True)
+        if not self.language:
+            self.language = self.book.language
+        super().save(*args, **kwargs)
 
-    def get_translation(self, language):
-        """
-        Returns the translated chapter in the specified language.
-        Accepts either a Language instance or a language code (str).
-        """
-        if isinstance(language, str):
-            return self.translations.filter(language__code=language).first()
-        return self.translations.filter(language=language).first()
-
-    def get_effective_language(self):
-        """Get the effective language of this chapter (inherits from book if not specified)"""
-        return self.language or self.book.language
-
-    def get_chapter_media_directory(self, media_type):
-        """Get the directory for chapter media files of a specific type"""
-        book_id = self.book.id
-        chapter_id = self.id
-        return f"books/{book_id}/chapters/{chapter_id}/{media_type}"
 
     def generate_excerpt(self, max_length=200):
-        """Generate an excerpt from the chapter content"""
+        """Generate an excerpt from the chapter raw content"""
         raw_content = self.get_raw_content()
         if not raw_content:
             return ""
-        
+
         # Clean up the content for excerpt generation
         clean_content = raw_content.strip()
-        
+
         # If content is shorter than max_length, return as is
         if len(clean_content) <= max_length:
             return clean_content
-        
+
         # Find a good breaking point (sentence end, paragraph break, etc.)
         # Try to break at sentence endings first
-        sentence_endings = ['.', '!', '?', '。', '！', '？']
+        sentence_endings = [".", "!", "?", "。", "！", "？"]
         for ending in sentence_endings:
             pos = clean_content.rfind(ending, 0, max_length)
             if pos > max_length * 0.7:  # Only break if we're at least 70% through
-                return clean_content[:pos + 1] + "..."
-        
+                return clean_content[: pos + 1] + "..."
+
         # If no good sentence break, try paragraph break
-        pos = clean_content.rfind('\n\n', 0, max_length)
+        pos = clean_content.rfind("\n\n", 0, max_length)
         if pos > max_length * 0.7:
             return clean_content[:pos].strip() + "..."
-        
+
         # If no good paragraph break, try single newline
-        pos = clean_content.rfind('\n', 0, max_length)
+        pos = clean_content.rfind("\n", 0, max_length)
         if pos > max_length * 0.7:
             return clean_content[:pos].strip() + "..."
-        
+
         # Last resort: just truncate and add ellipsis
         return clean_content[:max_length] + "..."
 
@@ -1496,15 +1484,29 @@ class Chapter(
             self.word_count = 0
             self.char_count = 0
 
+    @property
+    def _root_directory(self):
+        """Get the base directory for all chapter files"""
+        return f"{self.book.chapters_directory}/{self.id}"
+
+    @property
+    def content_directory(self):
+        """Get the directory for chapter content files"""
+        return f"{self._root_directory}/content"
+
+    @property
+    def media_directory(self):
+        """Get the directory for chapter media files of a specific type"""
+        return f"{self._root_directory}/media"
+
 
 class ChapterMedia(TimeStampedModel):
     """Generalized model for storing various media types organized by book and chapter"""
-
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name="media")
     media_type = models.CharField(
         max_length=20,
-        choices=MEDIA_TYPE_CHOICES,
-        default="image",
+        choices=MediaType.choices,
+        default=MediaType.IMAGE,
         help_text="Type of media content",
     )
     file = models.FileField(
@@ -1514,7 +1516,7 @@ class ChapterMedia(TimeStampedModel):
                 allowed_extensions=IMAGE_EXTENSIONS
                 + AUDIO_EXTENSIONS
                 + VIDEO_EXTENSIONS
-                + DOCUMENT_EXTENSIONS
+                + FILE_EXTENSIONS
             )
         ],
     )
@@ -1581,8 +1583,8 @@ class ChapterMedia(TimeStampedModel):
             return "audio"
         elif ext in VIDEO_EXTENSIONS:
             return "video"
-        elif ext in DOCUMENT_EXTENSIONS:
-            return "document"
+        elif ext in FILE_EXTENSIONS:
+            return "file"
         else:
             return "other"
 
@@ -1608,8 +1610,8 @@ class ChapterMedia(TimeStampedModel):
         return self.media_type == "video"
 
     @property
-    def is_document(self):
-        return self.media_type == "document"
+    def is_file(self):
+        return self.media_type == "file"
 
     @property
     def display_title(self):
@@ -1703,7 +1705,7 @@ class BookFile(TimeStampedModel):
     file = models.FileField(
         upload_to=book_file_upload_to,
         validators=[
-            FileExtensionValidator(allowed_extensions=["pdf", "txt", "docx", "epub"])
+            FileExtensionValidator(allowed_extensions=["txt"])
         ],
     )
     description = models.CharField(max_length=255, blank=True)

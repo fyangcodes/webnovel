@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import path
 from django.shortcuts import redirect
 from django.contrib import messages
+from django import forms
 from .models import Book, Chapter, Language, BookFile, Author, ChangeLog, ChapterMedia
 from .tasks import sync_media_with_content_async, rebuild_structured_content_from_media_async
 
@@ -23,6 +24,35 @@ class ChapterInline(admin.TabularInline):
     model = Chapter
     extra = 1
     readonly_fields = ['word_count', 'char_count', 'created_at']
+
+
+class ChapterAdminForm(forms.ModelForm):
+    """Custom form for Chapter admin to handle raw content editing"""
+    raw_content = forms.CharField(
+        widget=forms.Textarea(attrs={
+            'rows': 20,
+            'cols': 80,
+            'style': 'width: 100%; font-family: monospace;',
+            'placeholder': 'Enter the raw content here...'
+        }),
+        required=False,
+        help_text="Raw content that will be stored in the JSON file and parsed into structured content."
+    )
+    
+    class Meta:
+        model = Chapter
+        exclude = ['content']  # Exclude the old content field
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            # Load current raw content from JSON file
+            try:
+                raw_content = self.instance.get_raw_content()
+                if raw_content is not None:
+                    self.fields['raw_content'].initial = raw_content
+            except Exception:
+                pass
 
 
 @admin.register(Book)
@@ -72,6 +102,9 @@ class BookAdmin(admin.ModelAdmin):
 
 @admin.register(Chapter)
 class ChapterAdmin(admin.ModelAdmin):
+    form = ChapterAdminForm
+    change_form_template = "admin/books/chapter/change_form.html"
+    
     list_display = [
         "title", 
         "chapter_number", 
@@ -79,17 +112,20 @@ class ChapterAdmin(admin.ModelAdmin):
         "status", 
         "word_count", 
         "paragraph_style",
+        "raw_content_preview",
         "active_at",
         "created_at"
     ]
     list_filter = ["status", "language", "paragraph_style", "created_at", "active_at"]
-    search_fields = ["title", "book__title", "content"]
+    search_fields = ["title", "book__title"]
     readonly_fields = [
         "slug", 
         "word_count", 
         "char_count", 
         "structured_content_file_path",
         "raw_content_file_path",
+        "raw_content_file_info",
+        "raw_content_preview",
         "created_at", 
         "updated_at",
         "structured_content_preview",
@@ -101,12 +137,12 @@ class ChapterAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Basic Information",
-            {"fields": ("book", "title", "slug", "chapter_number", "content")},
+            {"fields": ("book", "title", "slug", "chapter_number", "raw_content")},
         ),
         (
             "Structured Content",
             {
-                "fields": ("paragraph_style", "structured_content_file_path", "raw_content_file_path", "structured_content_preview"),
+                "fields": ("paragraph_style", "structured_content_file_path", "raw_content_file_path", "raw_content_file_info", "raw_content_preview", "structured_content_preview"),
                 "description": "Configure how content is parsed and stored in structured format."
             },
         ),
@@ -191,7 +227,73 @@ class ChapterAdmin(admin.ModelAdmin):
     
     image_count.short_description = "Image Count"
     
-
+    def raw_content_file_info(self, obj):
+        """Show information about the raw content file"""
+        if not obj.pk:
+            return "N/A"
+        
+        if obj.raw_content_file_path:
+            try:
+                from django.core.files.storage import default_storage
+                if default_storage.exists(obj.raw_content_file_path):
+                    # Get file size and last modified info
+                    try:
+                        stat = default_storage.stat(obj.raw_content_file_path)
+                        size_kb = stat.st_size / 1024
+                        from datetime import datetime
+                        modified = datetime.fromtimestamp(stat.st_mtime)
+                        return f"✓ {obj.raw_content_file_path}<br><small>Size: {size_kb:.1f} KB | Modified: {modified.strftime('%Y-%m-%d %H:%M')}</small>"
+                    except:
+                        return f"✓ {obj.raw_content_file_path}"
+                else:
+                    return f"✗ {obj.raw_content_file_path}<br><small>File not found</small>"
+            except Exception:
+                return f"? {obj.raw_content_file_path}<br><small>Error checking file</small>"
+        else:
+            return "No file path set<br><small>Raw content will be saved to a new file</small>"
+    
+    raw_content_file_info.short_description = "Raw Content File Status"
+    
+    def raw_content_preview(self, obj):
+        """Show a preview of the raw content in the list view"""
+        try:
+            raw_content = obj.get_raw_content()
+            if raw_content:
+                # Show first 100 characters
+                preview = raw_content[:100]
+                if len(raw_content) > 100:
+                    preview += "..."
+                return preview
+            else:
+                return "No content"
+        except Exception:
+            return "Error loading content"
+    
+    raw_content_preview.short_description = "Content Preview"
+    
+    def save_model(self, request, obj, form, change):
+        """Override save to handle raw content updates"""
+        # Check if raw content was submitted via the form
+        raw_content = form.cleaned_data.get('raw_content')
+        if raw_content is not None:
+            # Save the raw content to JSON file
+            try:
+                obj.save_raw_content(raw_content, user=request.user, summary="Updated via admin interface")
+                
+                # Optionally regenerate structured content if paragraph style is set
+                if obj.paragraph_style:
+                    try:
+                        structured_content = obj._parse_legacy_content()
+                        obj.save_structured_content(structured_content, user=request.user, summary="Auto-regenerated from updated raw content")
+                    except Exception as e:
+                        from django.contrib import messages
+                        messages.warning(request, f"Raw content saved but failed to regenerate structured content: {str(e)}")
+                        
+            except Exception as e:
+                from django.contrib import messages
+                messages.error(request, f"Error saving raw content: {str(e)}")
+        
+        super().save_model(request, obj, form, change)
     
     def regenerate_structured_content(self, request, queryset):
         """Regenerate structured content for selected chapters"""
