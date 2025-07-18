@@ -39,11 +39,8 @@ Benefits of Self-Contained Organization:
 
 import hashlib
 import json
-import os
 import mimetypes
 import re
-import uuid
-from datetime import datetime
 
 from django.conf import settings
 from django.core.validators import FileExtensionValidator, RegexValidator
@@ -56,70 +53,30 @@ from django.templatetags.static import static
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
-from .fields import AutoIncrementingPositiveIntegerField
-from .choices import RatingChoices, BookStatus, MediaType, ParagraphStyle
-from .constants import IMAGE_EXTENSIONS, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, FILE_EXTENSIONS
-
 from common.models import TimeStampedModel
 
-# Custom validator for Unicode slugs
-unicode_slug_validator = RegexValidator(
-    regex=r'^[^\s/\\?%*:|"<>]+$',
-    message='Slug can contain any characters except whitespace and /\\?%*:|"<>',
-    code="invalid_slug",
+from .fields import AutoIncrementingPositiveIntegerField
+from .choices import (
+    RatingChoices,
+    BookStatus,
+    MediaType,
+    ParagraphStyle,
+    ChangeType,
+    ProcessingStatus,
+    ChapterStatus,
 )
-
-def generate_unique_filename(base_path, filename):
-    """
-    Generate a unique filename to prevent overwrites on S3.
-
-    Args:
-        base_path: The base directory path
-        filename: The original filename
-
-    Returns:
-        str: A unique filename with timestamp and/or counter
-    """
-    # Split filename into name and extension
-    name, ext = os.path.splitext(filename)
-
-    # Generate timestamp for uniqueness
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # Create the full path
-    full_path = f"{base_path}/{name}_{timestamp}{ext}"
-
-    # Check if file exists, if so, add a counter
-    counter = 1
-    while default_storage.exists(full_path):
-        full_path = f"{base_path}/{name}_{timestamp}_{counter}{ext}"
-        counter += 1
-        # Prevent infinite loops
-        if counter > 1000:
-            # If we hit 1000, use UUID as fallback
-            unique_id = str(uuid.uuid4())[:8]
-            full_path = f"{base_path}/{name}_{timestamp}_{unique_id}{ext}"
-            break
-
-    return full_path
-
-
-def book_file_upload_to(instance, filename):
-    """Generate upload path for book files with duplicate handling"""
-    base_path = instance.book.get_book_files_directory()
-    return generate_unique_filename(base_path, filename)
-
-
-def chapter_media_upload_to(instance, filename):
-    """Generate organized upload path for chapter media with duplicate handling"""
-    base_path = instance.chapter.get_chapter_media_directory(instance.media_type)
-    return generate_unique_filename(base_path, filename)
-
-
-def book_cover_upload_to(instance, filename):
-    """Generate upload path for book cover images with duplicate handling"""
-    base_path = f"{instance.get_book_directory()}/covers"
-    return generate_unique_filename(base_path, filename)
+from .constants import (
+    IMAGE_EXTENSIONS,
+    AUDIO_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    FILE_EXTENSIONS,
+)
+from .utils import (
+    book_cover_upload_to,
+    chapter_media_upload_to,
+    book_file_upload_to,
+)
+from .validators import unicode_slug_validator
 
 
 class Language(TimeStampedModel):
@@ -256,7 +213,6 @@ class Author(TimeStampedModel):
 
 class Book(TimeStampedModel):
 
-
     title = models.CharField(max_length=255)
     slug = models.CharField(
         max_length=255, unique=True, blank=True, validators=[unicode_slug_validator]
@@ -371,6 +327,104 @@ class Book(TimeStampedModel):
         else:
             return None
 
+class BookFile(TimeStampedModel):
+
+    book = models.ForeignKey("Book", on_delete=models.CASCADE, related_name="files")
+    file = models.FileField(
+        upload_to=book_file_upload_to,
+        validators=[FileExtensionValidator(allowed_extensions=["txt"])],
+    )
+    description = models.CharField(max_length=255, blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_bookfiles",
+        help_text="User who uploaded this file.",
+    )
+    file_size = models.PositiveIntegerField(default=0)  # in bytes
+    file_hash = models.CharField(max_length=64, blank=True)
+    file_type = models.CharField(max_length=20, blank=True)
+
+    # Status and processing
+    status = models.CharField(
+        max_length=20,
+        choices=ProcessingStatus.choices,
+        default=ProcessingStatus.WAITING,
+        help_text="Processing status of the file",
+    )
+    processing_progress = models.PositiveIntegerField(default=0)  # 0-100
+    error_message = models.TextField(blank=True)
+    processing_started_at = models.DateTimeField(null=True, blank=True)
+    processing_completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["book", "status"]),
+            models.Index(fields=["status", "processing_progress"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.file and not self.file_hash:
+            self.file_hash = self.calculate_file_hash()
+            self.file_size = self.file.size
+            self.file_type = self.file.name.split(".")[-1]
+        super().save(*args, **kwargs)
+
+    def calculate_file_hash(self):
+        """Calculate SHA256 hash of uploaded file"""
+        hash_sha256 = hashlib.sha256()
+        for chunk in self.file.chunks():
+            hash_sha256.update(chunk)
+        return hash_sha256.hexdigest()
+
+    def __str__(self):
+        return f"{self.file.name} for {self.book.title}"
+
+    @property
+    def processing_duration(self):
+        """Calculate processing duration"""
+        if self.processing_started_at and self.processing_completed_at:
+            return self.processing_completed_at - self.processing_started_at
+        elif self.processing_started_at:
+            return timezone.now() - self.processing_started_at
+        return None
+
+    @property
+    def is_processing(self):
+        return self.status in ["processing", "chunking", "translating"]
+
+    @property
+    def is_completed(self):
+        return self.status == "completed"
+
+    @property
+    def is_failed(self):
+        return self.status == "failed"
+
+    def get_processing_status_display(self):
+        """Get a user-friendly status display"""
+        status_map = {
+            "pending": "Waiting to be processed",
+            "processing": "Processing file",
+            "chunking": "Dividing into chapters",
+            "translating": "Translating content",
+            "completed": "Processing completed",
+            "failed": "Processing failed",
+        }
+        return status_map.get(self.status, self.status)
+
+    def get_progress_percentage(self):
+        """Get progress as a percentage"""
+        if self.status == "completed":
+            return 100
+        elif self.status == "failed":
+            return 0
+        else:
+            return self.processing_progress
+
+
 
 # --- MIXINS FOR CHAPTER ---
 
@@ -392,8 +446,7 @@ class ChapterContentMixin(models.Model):
     class Meta:
         abstract = True
 
-
-    def _list_versions_s3_fallback_generic(self, base_dir, pattern):
+    def _list_versions_s3_fallback_generic(self, base_dir, content_type):
         """Generic fallback method for listing versions that works with S3 storage"""
         version_files = {}
 
@@ -401,8 +454,6 @@ class ChapterContentMixin(models.Model):
             # For S3, we need to check if files exist by trying to access them
             # Start with version 0 and check up to a reasonable limit
             for version in range(100):  # Limit to prevent infinite loops
-                # Extract content type from pattern
-                content_type = pattern.pattern.split("_")[0].split("(")[-1]
                 filename = f"{content_type}_v{version}.json"
                 file_path = f"{base_dir}/{filename}"
 
@@ -418,7 +469,7 @@ class ChapterContentMixin(models.Model):
 
         return version_files
 
-    def _list_content_versions_generic(self, content_type, base_dir):
+    def list_content_versions(self, content_type):
         """Generic method to list versioned content files for both structured and raw content.
 
         Args:
@@ -429,6 +480,8 @@ class ChapterContentMixin(models.Model):
             dict: Dictionary with version numbers as keys and filenames as values.
                   Example: {0: 'structured_v0.json', 1: 'structured_v1.json'}
         """
+        base_dir = self.content_directory
+
         pattern = re.compile(rf"{content_type}_v(\d+)\.json")
 
         try:
@@ -447,12 +500,12 @@ class ChapterContentMixin(models.Model):
                 except Exception:
                     # Fallback for S3 or other storage backends
                     version_files = self._list_versions_s3_fallback_generic(
-                        base_dir, pattern
+                        base_dir, content_type
                     )
             else:
                 # Fallback for storage backends that don't support listdir
                 version_files = self._list_versions_s3_fallback_generic(
-                    base_dir, pattern
+                    base_dir, content_type
                 )
         except Exception as e:
             print(f"Warning: Error listing files in {base_dir}: {e}")
@@ -460,73 +513,30 @@ class ChapterContentMixin(models.Model):
 
         return version_files
 
-    
-    @property
-    def structured_content_versions(self):
-        """List all versioned JSON files for structured content.
-
-        Returns:
-            dict: Dictionary with version numbers as keys and filenames as values.
-                  Example: {0: 'structured_v0.json', 1: 'structured_v1.json'}
-        """
-        base_dir = self.content_directory
-        return self._list_content_versions_generic("structured", base_dir)
-
-    @property
-    def raw_content_versions(self):
-        """List all versioned JSON files for raw content.
-
-        Returns:
-            dict: Dictionary with version numbers as keys and filenames as values.
-                  Example: {0: 'raw_v0.json', 1: 'raw_v1.json'}
-        """
-        base_dir = self.content_directory
-        return self._list_content_versions_generic("raw", base_dir)
-
-    def get_structured_content_file_path(self, next_version=False):
+    def get_content_file_path(self, content_type, version=None, next_version=False):
         """Return the canonical versioned file path for this chapter's structured content."""
         base_dir = self.content_directory
 
         # Get existing files as dictionary
-        version_files = self.structured_content_versions
-
+        version_files = self.list_content_versions(content_type)
         if not version_files:
+            # If no files exist, start at version 0
             latest_version = 0
         else:
             # Get the highest version number (keys are version numbers)
             latest_version = max(version_files.keys())
 
-        if next_version:
+        # If version is provided, use it, otherwise use the latest version
+        if version is not None:
+            latest_version = version
+        elif next_version:
             latest_version += 1
 
-        return f"{base_dir}/structured_v{latest_version}.json"
+        return f"{base_dir}/{content_type}_v{latest_version}.json"
 
-    def get_structured_content_file_path_for_version(self, version):
-        """Get the file path for a specific structured content version."""
-        base_dir = self.content_directory
-        return f"{base_dir}/structured_v{version}.json"
-
-    def get_raw_content_file_path(self, next_version=False):
-        """Get path for raw content JSON file"""
-        base_dir = self.content_directory
-        version_files = self.raw_content_versions
-
-        if not version_files:
-            latest_version = 0
-        else:
-            latest_version = max(version_files.keys())
-
-        if next_version:
-            latest_version += 1
-
-        return f"{base_dir}/raw_v{latest_version}.json"
-
-    def get_raw_content_file_path_for_version(self, version):
-        """Get the file path for a specific raw content version."""
-        base_dir = self.content_directory
-        return f"{base_dir}/raw_v{version}.json"
-
-    def _save_content_generic(self, content_data, content_type, user=None, summary=""):
+    def save_content_file(
+        self, content_type, content_data, version=None, user=None, summary=""
+    ):
         """Generic method to save content to JSON file.
 
         Args:
@@ -535,67 +545,21 @@ class ChapterContentMixin(models.Model):
             user: User who made the change
             summary: Summary of the change
         """
-        if content_type == "structured":
-            file_path = self.get_content_file_path(next_version=True)
-        else:  # raw
-            file_path = self.get_raw_content_file_path(next_version=True)
+        file_path = self.get_content_file_path(content_type, version, next_version=True)
 
-        try:
-            # Let Django's storage handle directory creation
-            json_content = json.dumps(content_data, indent=2, ensure_ascii=False)
-            content_file = ContentFile(json_content.encode("utf-8"))
+        # Let Django's storage handle directory creation
+        json_content = json.dumps(content_data, indent=2, ensure_ascii=False)
+        content_file = ContentFile(json_content.encode("utf-8"))
 
-            # Save to storage
-            saved_path = default_storage.save(file_path, content_file)
+        # Save to storage
+        saved_path = default_storage.save(file_path, content_file)
 
-            # Update the database record
-            if content_type == "structured":
-                self.structured_content_file_path = file_path
-                self.save(update_fields=["structured_content_file_path"])
-            else:  # raw
-                self.raw_content_file_path = file_path
-                self.save(update_fields=["raw_content_file_path"])
+        # Update the database record
+        attr_name = f"{content_type}_content_file_path"
+        setattr(self, attr_name, saved_path)
+        self.save(update_fields=[attr_name])
 
-            # Log the change
-            ChangeLog.objects.create(
-                content_type=ContentType.objects.get_for_model(self),
-                original_object_id=self.id,
-                changed_object_id=self.id,
-                user=user,
-                change_type="edit",
-                status="completed",
-                notes=summary or f"{content_type.title()} content updated",
-                diff="",  # Optionally add a diff
-            )
-
-        except Exception as e:
-            print(f"Error saving {content_type} content to {file_path}: {e}")
-            raise
-
-    def save_structured_content(self, structured_content, user=None, summary=""):
-        """Save structured content to a new versioned JSON file and log the change."""
-        self._save_content_generic(structured_content, "structured", user, summary)
-
-    def save_raw_content(self, content_text, user=None, summary=""):
-        """Save raw content to JSON file with metadata"""
-        content_data = {
-            "content": content_text,
-            "word_count": len(content_text.split()),
-            "char_count": len(content_text),
-            "language": (
-                self.language.code
-                if self.language
-                else None
-            ),
-            "saved_at": timezone.now().isoformat(),
-            "user_id": user.id if user else None,
-            "summary": summary,
-            "version": len(self.raw_content_versions) + 1,
-        }
-
-        self._save_content_generic(content_data, "raw", user, summary)
-
-    def _get_content_generic(self, content_type):
+    def get_content(self, content_type, text_only=False):
         """Generic method to load content from JSON file.
 
         Args:
@@ -604,10 +568,8 @@ class ChapterContentMixin(models.Model):
         Returns:
             The loaded content data
         """
-        if content_type == "structured":
-            file_path = self.structured_content_file_path
-        else:  # raw
-            file_path = self.raw_content_file_path
+        attr_name = f"{content_type}_content_file_path"
+        file_path = getattr(self, attr_name)
 
         # Use the database path (authoritative source)
         if not file_path:
@@ -616,496 +578,88 @@ class ChapterContentMixin(models.Model):
             )  # Return appropriate fallback
 
         if not default_storage.exists(file_path):
-            return (
-                [] if content_type == "structured" else ""
-            )  # Return appropriate fallback
+            raise FileNotFoundError(f"File not found: {file_path}")
 
         try:
             with default_storage.open(file_path, "r") as f:
                 data = json.load(f)
                 if content_type == "structured":
-                    return data
+                    if text_only:
+                        return "\n\n".join([element["content"] for element in data])
+                    else:
+                        return data
                 else:  # raw
                     return data.get("content", "")
+
         except (json.JSONDecodeError, IOError):
-            return (
-                [] if content_type == "structured" else ""
-            )  # Return appropriate fallback
+            raise ValueError(f"Invalid JSON file: {file_path}")
 
-    def get_structured_content(self):
-        """Load structured content from JSON file"""
-        return self._get_content_generic("structured")
-
-    def get_raw_content(self):
-        """Get raw content from JSON file or database fallback"""
-        raw_content = self._get_content_generic("raw")
-        if raw_content:
-            return raw_content
-
-        # No database content fallback since content field was removed
-        return ""
-
-    def get_raw_content_metadata(self):
-        """Get raw content metadata (word count, language, etc.)"""
-        if self.raw_content_file_path and default_storage.exists(
-            self.raw_content_file_path
-        ):
-            try:
-                with default_storage.open(self.raw_content_file_path, "r") as f:
-                    data = json.load(f)
-                    return {
-                        "word_count": data.get("word_count", 0),
-                        "char_count": data.get("char_count", 0),
-                        "language": data.get("language"),
-                        "saved_at": data.get("saved_at"),
-                        "version": data.get("version"),
-                    }
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        # Fallback to calculated values
-        content = self.get_raw_content()
-        return {
-            "word_count": len(content.split()),
-            "char_count": len(content),
-            "language": (
-                self.language.code
-                if self.language
-                else None
-            ),
-            "saved_at": None,
-            "version": None,
-        }
-
-    def _parse_legacy_content(self):
+    def parse_content_raw_to_structured(self, style=ParagraphStyle.AUTO_DETECT):
         """Parse legacy content based on paragraph style setting"""
-        if self.paragraph_style == "single_newline":
-            return self._parse_single_newline()
-        elif self.paragraph_style == "double_newline":
-            return self._parse_double_newline()
-        else:
-            return self._parse_auto_detect()
+        # Get raw content
+        raw_content = self.get_content("raw")
 
-    def _parse_single_newline(self):
-        """Parse by single newlines"""
-        raw_content = self.get_raw_content()
-        paragraphs = raw_content.split("\n")
-        structured_content = []
+        # Split content into paragraphs based on style
+        # if style is auto detect, detect by counting newlines
+        if style == ParagraphStyle.AUTO_DETECT:
+            single_count = raw_content.count("\n")
+            double_count = raw_content.count("\n\n")
+            if double_count > single_count / 4:
+                style = ParagraphStyle.DOUBLE_NEWLINE
+            else:
+                style = ParagraphStyle.SINGLE_NEWLINE
 
-        for paragraph in paragraphs:
-            if paragraph.strip():
-                structured_content.append(
-                    {"type": "text", "content": paragraph.strip()}
-                )
-
-        return structured_content
-
-    def _parse_double_newline(self):
-        """Parse by double newlines"""
-        raw_content = self.get_raw_content()
-        paragraphs = raw_content.split("\n\n")
-        structured_content = []
-
-        for content in paragraphs:
-            if content.strip():
-                structured_content.append({"type": "text", "content": content.strip()})
-
-        return structured_content
-
-    def _parse_auto_detect(self):
-        """Auto-detect paragraph style"""
-        raw_content = self.get_raw_content()
-        # Count single vs double newlines
-        single_count = raw_content.count("\n")
-        double_count = raw_content.count("\n\n")
-
-        # If more double newlines, use double newline parsing
-        if double_count > single_count / 4:  # Threshold for detection
-            return self._parse_double_newline()
-        else:
-            return self._parse_single_newline()
-
-    def get_paragraphs(self):
-        """Get paragraphs with calculated numbers"""
-        structured_content = self.get_structured_content()
-        paragraphs = []
-
-        for i, element in enumerate(structured_content):
-            if element["type"] == "text":
-                paragraphs.append(
-                    {
-                        "paragraph_number": i + 1,  # Calculate from array index
-                        "content": element["content"],
-                        "array_index": i,
-                    }
-                )
-
-        return paragraphs
-
-    def get_paragraph_by_number(self, paragraph_number):
-        """Get specific paragraph by number"""
-        paragraphs = self.get_paragraphs()
-        for paragraph in paragraphs:
-            if paragraph["paragraph_number"] == paragraph_number:
-                return paragraph
-        return None
-
-    def add_paragraph(self, content, position=None):
-        """Add a new paragraph to the chapter"""
-        structured_content = self.get_structured_content()
-
-        new_paragraph = {"type": "text", "content": content}
-
-        if position is None:
-            structured_content.append(new_paragraph)
-        else:
-            structured_content.insert(position, new_paragraph)
-
-        self.save_structured_content(
-            structured_content, summary="Added paragraph to structured content"
+        paragraphs = raw_content.split(
+            "\n" if style == ParagraphStyle.SINGLE_NEWLINE else "\n\n"
         )
 
-    def update_paragraph(self, index, content):
-        """Update paragraph content at specific index"""
-        structured_content = self.get_structured_content()
+        structured_content = []
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if paragraph:
+                structured_content.append({"type": "text", "content": paragraph})
 
-        if (
-            0 <= index < len(structured_content)
-            and structured_content[index]["type"] == "text"
-        ):
-            structured_content[index]["content"] = content
-            self.save_structured_content(
-                structured_content, summary="Updated paragraph in structured content"
-            )
-            return True
-        return False
+        return structured_content
 
-    def delete_paragraph(self, index):
-        """Delete paragraph at specific index"""
-        structured_content = self.get_structured_content()
-        if 0 <= index < len(structured_content):
-            del structured_content[index]
-            self.save_structured_content(
-                structured_content, summary="Deleted paragraph from structured content"
-            )
-            return True
+    def parse_content_structured_to_raw(self):
+        """Parse structured content to raw content"""
+        structured_content = self.get_content("structured")
+
+        raw_content = ""
+        for element in structured_content:
+            if element["type"] == "text":
+                raw_content += element["content"] + "\n\n"
+
+        return raw_content.strip()
 
 
 class ChapterContentMediaMixin(ChapterContentMixin):
     class Meta:
         abstract = True
 
-    def add_media_to_content(self, media_id, media_type, caption="", position=None):
-        """Add media to structured content at position relative to text paragraphs"""
-        structured_content = self.get_structured_content()
-
-        # Create media element based on type with file path
-        if media_type == "image":
-            # For backward compatibility, use image_id for images
-            new_media = {"type": "image", "image_id": media_id, "caption": caption}
-        else:
-            # For new media types, use media_id
-            new_media = {"type": media_type, "media_id": media_id, "caption": caption}
-
-        # Add file path if available
-        try:
-            if media_type == "image":
-                media_obj = ChapterMedia.objects.get(id=media_id, media_type="image")
-            else:
-                media_obj = ChapterMedia.objects.get(id=media_id, media_type=media_type)
-            new_media["file_path"] = media_obj.file.url if media_obj.file else None
-        except ChapterMedia.DoesNotExist:
-            new_media["file_path"] = None
-
-        if position is None:
-            # If no position specified, append to end
-            structured_content.append(new_media)
-        else:
-            # Find the absolute position relative to text paragraphs
-            text_count = 0
-            insert_index = len(structured_content)  # Default to end
-
-            for i, element in enumerate(structured_content):
-                if element["type"] == "text":
-                    text_count += 1
-                    if text_count == position:
-                        # Insert before this text paragraph
-                        insert_index = i
-                        break
-                elif text_count == position:
-                    # We've reached the target text position, insert here
-                    insert_index = i
-                    break
-
-            structured_content.insert(insert_index, new_media)
-
-        self.save_structured_content(
-            structured_content,
-            summary=f"Added {media_type} media to structured content",
-        )
-
     def get_media_by_type(self, media_type):
         """Get all media of a specific type for this chapter"""
         return self.media.filter(media_type=media_type).order_by("position")
 
-    def get_images(self):
-        """Get all images for this chapter (backward compatibility)"""
-        return self.get_media_by_type("image")
-
-    def get_audio(self):
-        """Get all audio files for this chapter"""
-        return self.get_media_by_type("audio")
-
-    def get_videos(self):
-        """Get all video files for this chapter"""
-        return self.get_media_by_type("video")
-
-    def get_documents(self):
-        """Get all documents for this chapter"""
-        return self.get_media_by_type("document")
-
-    def add_media(self, file, media_type=None, title="", caption="", position=None):
-        """Add a new media item to this chapter"""
-        if position is None:
-            # Get the next position
-            last_media = self.media.order_by("-position").first()
-            position = (last_media.position + 1) if last_media else 1
-
-        media = ChapterMedia.objects.create(
-            chapter=self,
-            file=file,
-            media_type=media_type,
-            title=title,
-            caption=caption,
-            position=position,
-        )
-
-        # Automatically add to structured content
-        self.add_media_to_content(media.id, media.media_type, media.caption)
-
-        return media
-
-    def add_image(self, image_file, caption="", alt_text="", position=None):
-        """Add an image to this chapter (backward compatibility)"""
-        media = self.add_media(
-            file=image_file, media_type="image", caption=caption, position=position
-        )
-        media.alt_text = alt_text
-        media.save()
-        return media
-
-    def add_audio(self, audio_file, title="", caption="", duration=None, position=None):
-        """Add an audio file to this chapter"""
-        media = self.add_media(
-            file=audio_file,
-            media_type="audio",
-            title=title,
-            caption=caption,
-            position=position,
-        )
-        if duration:
-            media.duration = duration
-            media.save()
-        return media
-
-    def add_video(
-        self,
-        video_file,
-        title="",
-        caption="",
-        duration=None,
-        thumbnail=None,
-        position=None,
-    ):
-        """Add a video file to this chapter"""
-        media = self.add_media(
-            file=video_file,
-            media_type="video",
-            title=title,
-            caption=caption,
-            position=position,
-        )
-        if duration:
-            media.duration = duration
-        if thumbnail:
-            media.thumbnail = thumbnail
-        media.save()
-        return media
-
-    def add_document(self, document_file, title="", caption="", position=None):
-        """Add a document to this chapter"""
-        return self.add_media(
-            file=document_file,
-            media_type="document",
-            title=title,
-            caption=caption,
-            position=position,
-        )
-
-    def reorder_media(self, media_ids):
-        """Reorder media items by providing a list of media IDs in desired order"""
-        for position, media_id in enumerate(media_ids, 1):
-            try:
-                media = self.media.get(id=media_id)
-                media.position = position
-                media.save(update_fields=["position"])
-            except ChapterMedia.DoesNotExist:
-                continue
-
-    def get_media_count_by_type(self):
+    def get_media_count_by_type(self, media_type):
         """Get count of media items by type"""
-        from django.db.models import Count
+        return self.media.filter(media_type=media_type).count()
 
-        return self.media.values("media_type").annotate(count=Count("id"))
-
-    def delete_element(self, index):
-        """Delete element at specific index"""
-        structured_content = self.get_structured_content()
-
-        if 0 <= index < len(structured_content):
-            del structured_content[index]
-            self.save_structured_content(
-                structured_content, summary="Deleted element from structured content"
-            )
-            return True
-        return False
-
-    def reorder_elements(self, new_order):
-        """Reorder elements based on new index order"""
-        structured_content = self.get_structured_content()
-
-        if len(new_order) == len(structured_content):
-            reordered_content = [structured_content[i] for i in new_order]
-            self.save_structured_content(
-                reordered_content, summary="Reordered elements in structured content"
-            )
-            return True
-        return False
-
-    def get_element_by_index(self, index):
-        """Get element by array index"""
-        structured_content = self.get_structured_content()
-        if 0 <= index < len(structured_content):
-            element = structured_content[index]
-            if element["type"] == "paragraph":
-                return {**element, "paragraph_number": index + 1, "array_index": index}
-            else:
-                return {**element, "array_index": index}
-        return None
-
-    @property
-    def total_media_count(self):
-        """Get total number of media items"""
-        return self.media.count()
-
-    def sync_media_with_content(self):
-        """Sync all media items with structured content, adding any that are missing"""
-        structured_content = self.get_structured_content()
-        existing_media_ids = set()
-
-        # Collect existing media IDs from structured content
-        for element in structured_content:
-            if element["type"] == "image" and "image_id" in element:
-                existing_media_ids.add(("image", element["image_id"]))
-            elif (
-                element["type"] in ["audio", "video", "document"]
-                and "media_id" in element
-            ):
-                existing_media_ids.add((element["type"], element["media_id"]))
-
-        # Find media items that are not in structured content
-        all_media = self.media.all()
-        media_to_add = []
-
-        for media in all_media:
-            media_key = (media.media_type, media.id)
-            if media_key not in existing_media_ids:
-                # Create media element based on type with file path
-                if media.media_type == "image":
-                    # For backward compatibility, use image_id for images
-                    media_element = {
-                        "type": "image",
-                        "image_id": media.id,
-                        "caption": media.caption,
-                        "file_path": media.file.url if media.file else None,
-                    }
-                else:
-                    # For new media types, use media_id
-                    media_element = {
-                        "type": media.media_type,
-                        "media_id": media.id,
-                        "caption": media.caption,
-                        "file_path": media.file.url if media.file else None,
-                    }
-
-                media_to_add.append((media_element, media.position))
-
-        # Add all missing media items at once
-        if media_to_add:
-            # Sort by position to ensure proper insertion order
-            media_to_add.sort(key=lambda x: x[1] if x[1] is not None else float("inf"))
-
-            # Insert media items at their relative positions
-            for media_element, position in media_to_add:
-                if position is None:
-                    # If no position specified, append to end
-                    structured_content.append(media_element)
-                else:
-                    # Find the absolute position relative to text paragraphs
-                    text_count = 0
-                    insert_index = len(structured_content)  # Default to end
-
-                    for i, element in enumerate(structured_content):
-                        if element["type"] == "text":
-                            text_count += 1
-                            if text_count == position:
-                                # Insert before this text paragraph
-                                insert_index = i
-                                break
-                        elif text_count == position:
-                            # We've reached the target text position, insert here
-                            insert_index = i
-                            break
-
-                    structured_content.insert(insert_index, media_element)
-
-            # Save the updated structured content once with versioning
-            self.save_structured_content(
-                structured_content, summary="Synced media with structured content"
-            )
-
-        return len(media_to_add)
-
-    def rebuild_structured_content_from_media(self):
-        """Rebuild structured content to match current media order using relative positioning"""
-        # Get all media ordered by position
-        all_media = self.media.order_by("position")
-
-        # Start with existing text content ONLY (remove any existing media)
-        structured_content = []
-        existing_content = self.get_structured_content()
-
-        # Add ONLY text elements (filter out any existing media)
-        for element in existing_content:
-            if element["type"] == "text":
-                structured_content.append(element)
+    def build_structured_content_with_media(self):
+        """Build structured content to match current media order using relative positioning"""
+        # Start with existing structured content or initialize by parsing raw content
+        structured_content = self.get_content("structured", text_only=True)
+        if not structured_content:
+            structured_content = self.parse_content_raw_to_structured()
 
         # Add ALL media elements from database at their relative positions
-        for media in all_media:
-            if media.media_type == "image":
-                media_element = {
-                    "type": "image",
-                    "image_id": media.id,
-                    "caption": media.caption,
-                    "file_path": media.file.url if media.file else None,
-                }
-            else:
-                media_element = {
-                    "type": media.media_type,
-                    "media_id": media.id,
-                    "caption": media.caption,
-                    "file_path": media.file.url if media.file else None,
-                }
+        for media in self.media.all():
+            media_element = {
+                "type": media.media_type,
+                "media_id": media.id,
+                "caption": media.caption,
+                "file_path": media.file.url if media.file else None,
+            }
 
             # Insert at relative position (before text paragraph N)
             if media.position is None:
@@ -1113,8 +667,6 @@ class ChapterContentMediaMixin(ChapterContentMixin):
             else:
                 # Find the absolute position relative to text paragraphs
                 text_count = 0
-                insert_index = len(structured_content)  # Default to end
-
                 for i, element in enumerate(structured_content):
                     if element["type"] == "text":
                         text_count += 1
@@ -1122,118 +674,17 @@ class ChapterContentMediaMixin(ChapterContentMixin):
                             # Insert before this text paragraph
                             insert_index = i
                             break
-                    elif text_count == media.position:
-                        # We've reached the target text position, insert here
-                        insert_index = i
-                        break
 
                 structured_content.insert(insert_index, media_element)
 
-        # Save the rebuilt content with versioning
-        self.save_structured_content(
-            structured_content, summary="Rebuilt structured content from media"
-        )
-        return len(structured_content)
-
-    def get_paragraphs_and_media(self):
-        """Get paragraphs and media in order as they appear in structured content"""
-        structured_content = self.get_structured_content()
-        result = []
-
-        for element in structured_content:
-            if element["type"] == "text":
-                result.append(
-                    {
-                        "type": "text",
-                        "content": element["content"],
-                        "paragraph_number": element.get("paragraph_number", 0),
-                    }
-                )
-            elif element["type"] == "image":
-                # Use file path from JSON if available, otherwise fallback to database lookup
-                if element.get("file_path"):
-                    result.append(
-                        {
-                            "type": "image",
-                            "media": None,
-                            "image": None,
-                            "caption": element.get("caption", ""),
-                            "position": element.get("position"),
-                            "file_path": element["file_path"],
-                        }
-                    )
-                else:
-                    try:
-                        # Try to find in ChapterMedia
-                        media = ChapterMedia.objects.filter(
-                            chapter=self, media_type="image", id=element["image_id"]
-                        ).first()
-
-                        if not media:
-                            # Skip if media doesn't exist
-                            continue
-                        else:
-                            result.append(
-                                {
-                                    "type": "image",
-                                    "media": media,
-                                    "image": None,
-                                    "caption": element.get("caption", media.caption),
-                                    "position": element.get("position", media.position),
-                                    "file_path": media.file.url if media.file else None,
-                                }
-                            )
-                    except Exception:
-                        # Skip if media doesn't exist
-                        continue
-            elif element["type"] in ["audio", "video", "document"]:
-                # Use file path from JSON if available, otherwise fallback to database lookup
-                if element.get("file_path"):
-                    result.append(
-                        {
-                            "type": element["type"],
-                            "media": None,
-                            "caption": element.get("caption", ""),
-                            "position": element.get("position"),
-                            "file_path": element["file_path"],
-                        }
-                    )
-                else:
-                    try:
-                        media = ChapterMedia.objects.get(
-                            chapter=self,
-                            media_type=element["type"],
-                            id=element["media_id"],
-                        )
-                        result.append(
-                            {
-                                "type": element["type"],
-                                "media": media,
-                                "caption": element.get("caption", media.caption),
-                                "position": element.get("position", media.position),
-                                "file_path": media.file.url if media.file else None,
-                            }
-                        )
-                    except ChapterMedia.DoesNotExist:
-                        # Skip if media doesn't exist
-                        continue
-
-        return result
+        return structured_content
 
 
 class ChapterScheduleMixin(models.Model):
     status = models.CharField(
         max_length=20,
-        choices=[
-            ("draft", "Draft"),
-            ("translating", "Translating"),
-            ("scheduled", "Scheduled"),
-            ("published", "Published"),
-            ("archived", "Archived"),
-            ("private", "Private"),
-            ("error", "Error"),
-        ],
-        default="draft",
+        choices=ChapterStatus.choices,
+        default=ChapterStatus.DRAFT,
         help_text="Chapter status",
     )
     active_at = models.DateTimeField(
@@ -1380,13 +831,10 @@ class ChapterAIMixin(models.Model):
     rating = models.CharField(
         max_length=5, choices=RatingChoices.choices, default=RatingChoices.EVERYONE
     )
-    summary = models.TextField(
-        blank=True, help_text="Summary for translation context"
-    )
+    summary = models.TextField(blank=True, help_text="Summary for translation context")
     key_terms = models.JSONField(
         default=list, blank=True, help_text="Important terms for consistent translation"
     )
-
 
     class Meta:
         abstract = True
@@ -1429,6 +877,7 @@ class Chapter(
 
     def clean(self):
         from django.core.exceptions import ValidationError
+
         if not self.title:
             raise ValidationError("Title is required")
 
@@ -1438,7 +887,6 @@ class Chapter(
         if not self.language:
             self.language = self.book.language
         super().save(*args, **kwargs)
-
 
     def generate_excerpt(self, max_length=200):
         """Generate an excerpt from the chapter raw content"""
@@ -1500,8 +948,10 @@ class Chapter(
         return f"{self._root_directory}/media"
 
 
+
 class ChapterMedia(TimeStampedModel):
     """Generalized model for storing various media types organized by book and chapter"""
+
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name="media")
     media_type = models.CharField(
         max_length=20,
@@ -1530,6 +980,9 @@ class ChapterMedia(TimeStampedModel):
     position = models.PositiveIntegerField(
         help_text="Position relative to text paragraphs (e.g., 1 = before first paragraph)"
     )
+    order = models.PositiveIntegerField(
+        default=0, help_text="Order of the media in the chapter"
+    )
 
     # Media-specific metadata
     duration = models.PositiveIntegerField(
@@ -1549,7 +1002,7 @@ class ChapterMedia(TimeStampedModel):
     )
 
     class Meta:
-        ordering = ["position"]
+        ordering = ["position", "order"]
         indexes = [
             models.Index(fields=["chapter", "media_type"]),
             models.Index(fields=["media_type", "is_processed"]),
@@ -1598,22 +1051,6 @@ class ChapterMedia(TimeStampedModel):
         return mime_type or "application/octet-stream"
 
     @property
-    def is_image(self):
-        return self.media_type == "image"
-
-    @property
-    def is_audio(self):
-        return self.media_type == "audio"
-
-    @property
-    def is_video(self):
-        return self.media_type == "video"
-
-    @property
-    def is_file(self):
-        return self.media_type == "file"
-
-    @property
     def display_title(self):
         """Get display title (title or filename)"""
         return self.title or self.file.name.split("/")[-1]
@@ -1647,11 +1084,6 @@ class ChangeLog(TimeStampedModel):
     between any two objects (Book or Chapter).
     """
 
-    CHANGE_TYPE_CHOICES = [
-        ("translation", "Translation"),
-        ("edit", "Edit/Correction"),
-        ("other", "Other"),
-    ]
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     original_object_id = models.PositiveIntegerField()
     original_object = GenericForeignKey("content_type", "original_object_id")
@@ -1665,7 +1097,7 @@ class ChangeLog(TimeStampedModel):
         help_text="User who made the change (translator, editor, etc.)",
     )
     change_type = models.CharField(
-        max_length=20, choices=CHANGE_TYPE_CHOICES, default="edit"
+        max_length=20, choices=ChangeType.choices, default=ChangeType.EDIT
     )
     status = models.CharField(max_length=50, default="completed")
     notes = models.TextField(blank=True)
@@ -1691,112 +1123,6 @@ class ChangeLog(TimeStampedModel):
         ]
 
 
-class BookFile(TimeStampedModel):
-    STATUS_CHOICES = [
-        ("pending", "Pending"),
-        ("processing", "Processing"),
-        ("chunking", "Chunking"),
-        ("translating", "Translating"),
-        ("completed", "Completed"),
-        ("failed", "Failed"),
-    ]
-
-    book = models.ForeignKey("Book", on_delete=models.CASCADE, related_name="files")
-    file = models.FileField(
-        upload_to=book_file_upload_to,
-        validators=[
-            FileExtensionValidator(allowed_extensions=["txt"])
-        ],
-    )
-    description = models.CharField(max_length=255, blank=True)
-    owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="uploaded_bookfiles",
-        help_text="User who uploaded this file.",
-    )
-    file_size = models.PositiveIntegerField(default=0)  # in bytes
-    file_hash = models.CharField(max_length=64, blank=True)
-    file_type = models.CharField(max_length=20, blank=True)
-
-    # Status and processing
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default="pending",
-        help_text="Processing status of the file",
-    )
-    processing_progress = models.PositiveIntegerField(default=0)  # 0-100
-    error_message = models.TextField(blank=True)
-    processing_started_at = models.DateTimeField(null=True, blank=True)
-    processing_completed_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["book", "status"]),
-            models.Index(fields=["status", "processing_progress"]),
-        ]
-
-    def save(self, *args, **kwargs):
-        if self.file and not self.file_hash:
-            self.file_hash = self.calculate_file_hash()
-            self.file_size = self.file.size
-            self.file_type = self.file.name.split(".")[-1]
-        super().save(*args, **kwargs)
-
-    def calculate_file_hash(self):
-        """Calculate SHA256 hash of uploaded file"""
-        hash_sha256 = hashlib.sha256()
-        for chunk in self.file.chunks():
-            hash_sha256.update(chunk)
-        return hash_sha256.hexdigest()
-
-    def __str__(self):
-        return f"{self.file.name} for {self.book.title}"
-
-    @property
-    def processing_duration(self):
-        """Calculate processing duration"""
-        if self.processing_started_at and self.processing_completed_at:
-            return self.processing_completed_at - self.processing_started_at
-        elif self.processing_started_at:
-            return timezone.now() - self.processing_started_at
-        return None
-
-    @property
-    def is_processing(self):
-        return self.status in ["processing", "chunking", "translating"]
-
-    @property
-    def is_completed(self):
-        return self.status == "completed"
-
-    @property
-    def is_failed(self):
-        return self.status == "failed"
-
-    def get_processing_status_display(self):
-        """Get a user-friendly status display"""
-        status_map = {
-            "pending": "Waiting to be processed",
-            "processing": "Processing file",
-            "chunking": "Dividing into chapters",
-            "translating": "Translating content",
-            "completed": "Processing completed",
-            "failed": "Processing failed",
-        }
-        return status_map.get(self.status, self.status)
-
-    def get_progress_percentage(self):
-        """Get progress as a percentage"""
-        if self.status == "completed":
-            return 100
-        elif self.status == "failed":
-            return 0
-        else:
-            return self.processing_progress
 
 
 def get_default_book_cover_url():

@@ -24,3 +24,24 @@ class ParagraphStyle(models.TextChoices):
     SINGLE_NEWLINE = "S", "Single Newline"
     DOUBLE_NEWLINE = "D", "Double Newline"
     AUTO_DETECT = "A", "Auto Detect"
+
+
+class ChangeType(models.TextChoices):
+    TRANSLATION = "T", "Translation"
+    EDIT = "E", "Edit/Correction"
+    OTHER = "O", "Other"
+
+
+class ProcessingStatus(models.TextChoices):
+    WAITING = "W", "Waiting"
+    PROCESSING = "P", "Processing"
+    COMPLETED = "C", "Completed"
+    FAILED = "F", "Failed"
+
+
+class ChapterStatus(models.TextChoices):
+    DRAFT = "D", "Draft"
+    TRANSLATING = "T", "Translating"
+    SCHEDULED = "S", "Scheduled"
+    PUBLISHED = "P", "Published"
+    ARCHIVED = "A", "Archived"
