@@ -78,7 +78,7 @@ def chapter_media_upload_to(instance, filename):
 
 def book_cover_upload_to(instance, filename):
     """Generate upload path for book cover images with duplicate handling"""
-    base_path = instance.book.thumbnails_directory
+    base_path = instance.book.covers_directory
     return generate_unique_filename(base_path, filename)
 
 

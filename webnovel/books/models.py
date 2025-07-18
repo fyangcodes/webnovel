@@ -9,7 +9,7 @@ File Organization Structure:
     ├── {bookmaster.id}/
     │   ├── {book.id}_{book.language.code}/
     │   │   ├── files/
-    │   │   ├── thumbnails/
+    │   │   ├── covers/
     │   │   └── chapters/
     │   │       ├── {chapter.id}/
     │   │       │   ├── content/
@@ -43,7 +43,7 @@ import mimetypes
 import re
 
 from django.conf import settings
-from django.core.validators import FileExtensionValidator, RegexValidator
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -98,7 +98,13 @@ class Nationality(TimeStampedModel):
 
 
 class AbstractMaster(TimeStampedModel):
+    """
+    A abstract master is a master object that represents a book or chapter in regardless of the language.
+    It is used to store the book or chapter's metadata and to create book or chapter objects in different languages.
+    """
+
     canonical_name = models.CharField(max_length=255)
+    related_name_for_languages = None  # set by the subclass
 
     class Meta:
         abstract = True
@@ -116,8 +122,22 @@ class AbstractMaster(TimeStampedModel):
         if not self.canonical_name:
             raise ValidationError("Canonical name is required")
 
+    def get_existing_languages(self):
+        """Get all languages that have a related object"""
+        if not self.related_name_for_languages:
+            raise NotImplementedError(
+                "Subclasses must define related_name_for_languages"
+            )
+        related_manager = getattr(self, self.related_name_for_languages)
+        return related_manager.values_list("language__code", flat=True)
+
 
 class AuthorMaster(AbstractMaster):
+    """
+    A author master is a master object that represents an author in regardless of the language.
+    It is used to store the author's metadata and to create author objects in different languages.
+    It is also used to store the author's nationality, birth date, death date, birth place, and death place.
+    """
     nationality = models.ForeignKey(
         Nationality, on_delete=models.SET_NULL, null=True, blank=True
     )
@@ -125,6 +145,7 @@ class AuthorMaster(AbstractMaster):
     death_date = models.DateField(null=True, blank=True)
     birth_place = models.CharField(max_length=255, null=True, blank=True)
     death_place = models.CharField(max_length=255, null=True, blank=True)
+    related_name_for_languages = "authors"
 
     class Meta:
         ordering = ["canonical_name"]
@@ -135,6 +156,13 @@ class AuthorMaster(AbstractMaster):
 
 
 class BookMaster(AbstractMaster):
+    """
+    A book master is a master object that represents a book in regardless of the language.
+    It is used to store the book's metadata and to create book objects in different languages.
+    It is also used to store the book's original and pivot languages.
+    It is also used to store the book's author and owner.
+    """
+
     author = models.ManyToManyField(AuthorMaster, related_name="books")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -149,6 +177,7 @@ class BookMaster(AbstractMaster):
     pivot_language = models.ForeignKey(
         Language, on_delete=models.SET_NULL, null=True, blank=True
     )
+    related_name_for_languages = "books"
 
     class Meta:
         ordering = ["canonical_name"]
@@ -169,9 +198,16 @@ class BookMaster(AbstractMaster):
 
 
 class ChapterMaster(AbstractMaster):
+    """
+    A chapter master is a master object that represents a chapter in regardless of the language.
+    It is used to store the chapter's metadata and to create chapter objects in different languages.
+    It is also used to store the chapter's book and language.
+    """
+
     book_master = models.ForeignKey(
         BookMaster, on_delete=models.CASCADE, related_name="chapter_masters"
     )
+    related_name_for_languages = "chapters"
 
     class Meta:
         ordering = ["canonical_name"]
@@ -182,7 +218,9 @@ class ChapterMaster(AbstractMaster):
 
 
 class Author(TimeStampedModel):
-    master = models.ForeignKey(AuthorMaster, on_delete=models.CASCADE)
+    master = models.ForeignKey(
+        AuthorMaster, on_delete=models.CASCADE, related_name="authors"
+    )
     language = models.ForeignKey(
         Language, on_delete=models.SET_NULL, null=True, blank=True
     )
@@ -303,9 +341,9 @@ class Book(TimeStampedModel):
         return f"{self._root_directory}/files"
 
     @property
-    def thumbnails_directory(self):
+    def covers_directory(self):
         """Get the directory for book thumbnails"""
-        return f"{self._root_directory}/thumbnails"
+        return f"{self._root_directory}/covers"
 
     @property
     def chapters_directory(self):
@@ -326,6 +364,7 @@ class Book(TimeStampedModel):
             return static("images/default_book_cover.png")
         else:
             return None
+
 
 class BookFile(TimeStampedModel):
 
@@ -423,7 +462,6 @@ class BookFile(TimeStampedModel):
             return 0
         else:
             return self.processing_progress
-
 
 
 # --- MIXINS FOR CHAPTER ---
@@ -948,7 +986,6 @@ class Chapter(
         return f"{self._root_directory}/media"
 
 
-
 class ChapterMedia(TimeStampedModel):
     """Generalized model for storing various media types organized by book and chapter"""
 
@@ -1121,8 +1158,6 @@ class ChangeLog(TimeStampedModel):
             models.Index(fields=["user", "change_type"]),
             models.Index(fields=["created_at"]),
         ]
-
-
 
 
 def get_default_book_cover_url():
