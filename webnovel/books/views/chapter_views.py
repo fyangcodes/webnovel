@@ -22,6 +22,8 @@ from django.contrib.auth import get_user_model
 from ..models import Book, Chapter, Language
 from ..forms import ChapterForm
 from ..choices import ChapterStatus
+from books.tasks import analyze_chapter_async
+
 
 # Chapter CRUD Views
 class ChapterCreateView(LoginRequiredMixin, CreateView):
@@ -37,7 +39,9 @@ class ChapterCreateView(LoginRequiredMixin, CreateView):
         return context
 
     def form_valid(self, form):
-        book = get_object_or_404(Book, pk=self.kwargs["book_pk"], bookmaster__owner=self.request.user)
+        book = get_object_or_404(
+            Book, pk=self.kwargs["book_pk"], bookmaster__owner=self.request.user
+        )
         form.instance.book = book
 
         # Set user for raw content saving
@@ -99,7 +103,9 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
         if chapter.pk:  # Only for existing chapters
             try:
                 original_chapter = Chapter.objects.get(pk=chapter.pk)
-                original_content = original_chapter.get_content('raw')  # Use raw content
+                original_content = original_chapter.get_content(
+                    "raw"
+                )  # Use raw content
                 original_title = original_chapter.title
             except Chapter.DoesNotExist:
                 pass
@@ -213,8 +219,8 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
             # In a more advanced implementation, you might want to store version history
             content = {
                 "title": chapter.title,
-                "content": chapter.get_content('raw'),
-                "abstract": chapter.abstract or "",
+                "content": chapter.get_content("raw"),
+                "summary": chapter.summary or "",
                 "key_terms": chapter.key_terms or [],
                 "language": chapter.language.name if chapter.language else "Unknown",
                 "version_info": version_info or "Current version",
@@ -239,8 +245,8 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
 
             # Generate diffs
             content_diff = self._generate_diff(
-                original_chapter.get_content('raw'),
-                translated_chapter.get_content('raw'),
+                original_chapter.get_content("raw"),
+                translated_chapter.get_content("raw"),
                 context_lines=3,
             )
 
@@ -248,11 +254,11 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
                 original_chapter.title, translated_chapter.title, context_lines=1
             )
 
-            abstract_diff = ""
-            if original_chapter.abstract and translated_chapter.abstract:
-                abstract_diff = self._generate_diff(
-                    original_chapter.abstract,
-                    translated_chapter.abstract,
+            summary_diff = ""
+            if original_chapter.summary and translated_chapter.summary:
+                summary_diff = self._generate_diff(
+                    original_chapter.summary,
+                    translated_chapter.summary,
                     context_lines=2,
                 )
 
@@ -280,7 +286,7 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
                     "diffs": {
                         "title": title_diff,
                         "content": content_diff,
-                        "abstract": abstract_diff,
+                        "summary": summary_diff,
                     },
                 }
             )
@@ -291,11 +297,46 @@ class ChapterUpdateView(LoginRequiredMixin, UpdateView):
             logger.error(f"Error getting diff between chapters: {str(e)}")
             return JsonResponse({"success": False, "error": str(e)})
 
+
 class ChapterAnalyzeView(LoginRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        chapter_id = kwargs.get("pk")
+        chapter = get_object_or_404(
+            Chapter, pk=chapter_id, book__bookmaster__owner=request.user
+        )
+        user_id = request.user.id if request.user.is_authenticated else None
+        async_result = analyze_chapter_async.delay(chapter.id, user_id)
+        return JsonResponse(
+            {"success": True, "task_id": async_result.id, "chapter": chapter.id}
+        )
+
     def get(self, request, *args, **kwargs):
         chapter_id = kwargs.get("pk")
-        chapter = get_object_or_404(Chapter, pk=chapter_id, book__bookmaster__owner=request.user)
-        return JsonResponse({"success": True, "chapter": chapter.id})
+        chapter = get_object_or_404(
+            Chapter, pk=chapter_id, book__bookmaster__owner=request.user
+        )
+        # Optionally, return current analysis result if available
+        result = {
+            "summary": chapter.summary or "",
+            "key_terms": chapter.key_terms,
+            "rating": getattr(chapter, "rating", "everybody"),
+        }
+        # If the analysis result is present and differs from the chapter, update the chapter
+        updated = False
+        if result["summary"] != (chapter.summary or ""):
+            chapter.summary = result["summary"]
+            updated = True
+        if result["key_terms"] != (chapter.key_terms or []):
+            chapter.key_terms = result["key_terms"]
+            updated = True
+        if hasattr(chapter, "rating") and result["rating"] != getattr(
+            chapter, "rating", "everybody"
+        ):
+            chapter.rating = result["rating"]
+            updated = True
+        if updated:
+            chapter.save()
+        return JsonResponse({"success": True, "chapter": chapter.id, "result": result})
 
 
 class ChapterDeleteView(LoginRequiredMixin, DeleteView):
@@ -307,6 +348,7 @@ class ChapterDeleteView(LoginRequiredMixin, DeleteView):
 
     def get_success_url(self):
         return reverse_lazy("books:book_detail", kwargs={"pk": self.object.book.pk})
+
 
 @method_decorator(csrf_exempt, name="dispatch")
 class ChapterDiffView(LoginRequiredMixin, View):
@@ -330,7 +372,7 @@ class ChapterDiffView(LoginRequiredMixin, View):
 
             # For now, we'll compare with the current version
             # In a more advanced implementation, you might want to store version history
-            current_content = chapter.get_content('raw')
+            current_content = chapter.get_content("raw")
             current_title = chapter.title
 
             # If specific versions are provided, compare them
@@ -344,8 +386,8 @@ class ChapterDiffView(LoginRequiredMixin, View):
                     )
 
                     content_diff = self._generate_diff(
-                        version1.get_content('raw'),
-                        version2.get_content('raw'),
+                        version1.get_content("raw"),
+                        version2.get_content("raw"),
                         context_lines=3,
                     )
 
@@ -810,8 +852,8 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
                 chapter = version_obj["chapter"]
                 return {
                     "title": chapter.title,
-                    "content": chapter.get_content('raw'),
-                    "abstract": chapter.abstract or "",
+                    "content": chapter.get_content("raw"),
+                    "summary": chapter.summary or "",
                     "key_terms": chapter.key_terms or [],
                     "language": (
                         chapter.get_effective_language().name
@@ -824,7 +866,7 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
             return {
                 "title": "Error loading content",
                 "content": "Error loading content",
-                "abstract": "",
+                "summary": "",
                 "key_terms": [],
                 "language": "Unknown",
             }
@@ -840,8 +882,8 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
             # at each version or reconstruct it from the diff
             return {
                 "title": chapter.title,
-                "content": chapter.get_content('raw'),
-                "abstract": chapter.abstract or "",
+                "content": chapter.get_content("raw"),
+                "summary": chapter.summary or "",
                 "key_terms": chapter.key_terms or [],
                 "language": (
                     chapter.get_effective_language().name
@@ -857,7 +899,7 @@ class ChapterVersionCompareView(LoginRequiredMixin, View):
             return {
                 "title": "Error reconstructing content",
                 "content": "Error reconstructing content",
-                "abstract": "",
+                "summary": "",
                 "key_terms": [],
                 "language": "Unknown",
             }
@@ -964,5 +1006,3 @@ class TaskStatusView(LoginRequiredMixin, View):
                     "message": f"Error checking task status: {str(e)}",
                 }
             )
-
-

@@ -115,10 +115,10 @@ def process_bookfile_async(bookfile_id, user_id=None):
                 # Fallback: simple truncation
                 chapter.excerpt = content_text[:200] + "..." if len(content_text) > 200 else content_text
             
-            # Generate abstract and key terms
-            logger.info(f"Generating abstract and key terms for chapter {chapter.id}")
+            # Generate summary and key terms
+            logger.info(f"Generating summary and key terms for chapter {chapter.id}")
             try:
-                abstract = llm_service.generate_chapter_abstract(
+                summary = llm_service.generate_chapter_abstract(
                     content_text,
                     source_chapter=chapter,
                     user=user
@@ -128,10 +128,10 @@ def process_bookfile_async(bookfile_id, user_id=None):
                     source_chapter=chapter,
                     user=user
                 )
-                chapter.abstract = abstract
+                chapter.summary = summary
                 chapter.key_terms = key_terms
             except Exception as e:
-                logger.warning(f"Failed to generate abstract/key terms for chapter {chapter.id}: {str(e)}")
+                logger.warning(f"Failed to generate summary/key terms for chapter {chapter.id}: {str(e)}")
             
             # Update word and character counts
             chapter.update_content_statistics()
@@ -222,14 +222,14 @@ def translate_chapter_async(chapter_id, target_language_code):
             summary=f"AI translation from {original_chapter.get_effective_language().name if original_chapter.get_effective_language() else 'Unknown'} to {target_language.name}"
         )
 
-        # Step 3: Translate abstract (if it exists)
+        # Step 3: Translate summary (if it exists)
         logger.info(f"Translating metadata for chapter {chapter_id}")
-        translated_abstract = ""
-        if original_chapter.abstract:
-            translated_abstract = llm_service.translate_text(
-                original_chapter.abstract, target_language_code
+        translated_summary = ""
+        if original_chapter.summary:
+            translated_summary = llm_service.translate_text(
+                original_chapter.summary, target_language_code
             )
-        chapter.abstract = translated_abstract
+        chapter.summary = translated_summary
 
         # Step 4: Extract key terms from translated content
         translated_key_terms = llm_service.extract_key_terms(
@@ -283,7 +283,7 @@ def translate_chapter_async(chapter_id, target_language_code):
             "message": f"Chapter '{translated_title}' translated successfully to {target_language.name}",
             "translated_title": translated_title,
             "content_length": len(translated_content),
-            "abstract_length": len(translated_abstract),
+            "abstract_length": len(translated_summary),
             "key_terms_count": len(translated_key_terms),
             "final_slug": final_slug,
         }
@@ -461,3 +461,55 @@ def schedule_chapter_publishing_async(chapter_id, publish_datetime):
     except Exception as e:
         logger.error(f"Error scheduling chapter {chapter_id}: {str(e)}")
         return False
+
+
+@shared_task
+def analyze_chapter_async(chapter_id, user_id=None):
+    """
+    Asynchronously analyze a chapter using LLMTranslationService.analyze_chapter.
+    Updates the chapter's abstract, key_terms, and rating fields.
+    """
+    try:
+        from django.contrib.auth import get_user_model
+        from llm_integration.services import LLMTranslationService
+
+        chapter = Chapter.objects.get(id=chapter_id)
+        user = None
+        if user_id:
+            try:
+                user = get_user_model().objects.get(id=user_id)
+            except Exception as e:
+                logger.warning(f"Could not get user {user_id}: {str(e)}")
+
+        llm_service = LLMTranslationService()
+        chapter_text = chapter.get_content('raw')
+        target_language = chapter.language.code if chapter.language else None
+
+        logger.info(f"Analyzing chapter {chapter_id} with LLM...")
+        result = llm_service.analyze_chapter(
+            chapter_text=chapter_text,
+            target_language=target_language,
+            source_chapter=chapter,
+            user=user,
+        )
+        # Update chapter fields
+        chapter.summary = result.get('summary', '')
+        chapter.key_terms = result.get('key_terms', [])
+        if hasattr(chapter, 'rating'):
+            chapter.rating = result.get('rating', 'everybody')
+        chapter.save()
+        logger.info(f"Chapter {chapter_id} analysis complete.")
+        return {
+            "success": True,
+            "chapter_id": chapter_id,
+            "summary": chapter.summary,
+            "key_terms": chapter.key_terms,
+            "rating": getattr(chapter, 'rating', 'everybody'),
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing chapter {chapter_id}: {str(e)}")
+        return {
+            "success": False,
+            "chapter_id": chapter_id,
+            "error": str(e),
+        }

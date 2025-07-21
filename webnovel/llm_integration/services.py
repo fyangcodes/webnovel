@@ -847,6 +847,113 @@ class LLMTranslationService:
 
         return []
 
+    def analyze_chapter(
+        self,
+        chapter_text: str,
+        target_language: str = None,
+        source_chapter=None,
+        target_chapter=None,
+        user=None,
+    ) -> Dict[str, Any]:
+        """
+        Analyze a chapter to generate both a summary, extract key terms, and rate the content in a single LLM call.
+        Returns a dict with 'summary', 'key_terms', and 'rating' keys.
+        """
+        language_name = (
+            self._get_language_name(target_language)
+            if target_language
+            else "the original language"
+        )
+        language_instruction = (
+            f" in {language_name}" if target_language else " in the original language of chapter text"
+        )
+
+        # Detect source language from chapter
+        source_language = ""
+        source_book = None
+        if source_chapter:
+            if source_chapter.language:
+                source_language = source_chapter.language.code
+            elif source_chapter.book and source_chapter.book.language:
+                source_language = source_chapter.book.language.code
+            source_book = source_chapter.book
+
+        # Get target book from target chapter
+        target_book = None
+        if target_chapter:
+            target_book = target_chapter.book
+
+        prompt = f"""
+        Given the following chapter text, please:
+        1. Write a concise summary (2-3 sentences){language_instruction} that summarizes the main themes, key characters, tone, and important context for translation.
+        2. Identify 5-10 key terms (proper nouns, technical terms, repeated concepts, or cultural references) that are important for consistent translation.
+        3. Rate the content of the chapter for appropriate audience. Choose one rating from ONLY the following list: [\"everybody\", \"teen\", \"mature\", \"adult\"].
+
+        Return your answer as a JSON object with three fields:
+        - \"summary\": the summary as a string
+        - \"key_terms\": a list of strings
+        - \"rating\": one of [\"everybody\", \"teen\", \"mature\", \"adult\"]
+
+        Chapter text:
+        {chapter_text}
+        """
+        system_prompt = f"You are a helpful assistant that creates concise summaries, identifies key terms, and rates content for audience appropriateness for translation context. Always respond in {language_name}."
+
+        try:
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt),
+            ]
+
+            result = self._call_llm(
+                messages,
+                temperature=0.3,
+                max_tokens=500,
+                operation="analyze_chapter",
+                source_book=source_book,
+                source_chapter=source_chapter,
+                target_book=target_book,
+                target_chapter=target_chapter,
+                source_lang=source_language,
+                target_lang=target_language or "",
+                user=user,
+            )
+
+            # Try to parse JSON response
+            try:
+                data = json.loads(result)
+                summary = data.get("summary", "")
+                key_terms = data.get("key_terms", [])
+                rating = data.get("rating", "")
+                if not isinstance(key_terms, list):
+                    key_terms = []
+                if rating not in ["everybody", "teen", "mature", "adult"]:
+                    rating = "everybody"
+                return {"summary": summary, "key_terms": key_terms, "rating": rating}
+            except json.JSONDecodeError:
+                # Fallback: try to extract summary, key terms, and rating from text
+                summary = ""
+                key_terms = []
+                rating = "everybody"
+                summary_match = re.search(r"summary\s*[:：]\s*(.+?)(?:key terms|rating|$)", result, re.IGNORECASE | re.DOTALL)
+                if summary_match:
+                    summary = summary_match.group(1).strip()
+                key_terms_match = re.findall(r'"([^"]+)"', result)
+                if not key_terms_match:
+                    # Try comma-separated terms
+                    key_terms_match = re.findall(r"key terms\s*[:：]\s*(.+?)(?:rating|$)", result, re.IGNORECASE)
+                    if key_terms_match:
+                        key_terms = [t.strip() for t in key_terms_match[0].split(",") if t.strip()]
+                else:
+                    key_terms = key_terms_match[:10]
+                rating_match = re.search(r"rating\s*[:：]\s*(everybody|teen|mature|adult)", result, re.IGNORECASE)
+                if rating_match:
+                    rating = rating_match.group(1).lower()
+                return {"summary": summary or result[:200], "key_terms": key_terms, "rating": rating}
+        except Exception as e:
+            logger.error(f"Error analyzing chapter: {str(e)}")
+            return {"summary": f"Chapter summary (auto-generated excerpt): {chapter_text[:200]}...", "key_terms": [], "rating": "everybody"}
+
     def clear_language_cache(self):
         """Clear the cached language code-to-name mapping."""
         self._language_code_to_name_cache = None

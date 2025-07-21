@@ -18,8 +18,8 @@
                 <div class="d-flex align-items-center gap-2">
                     {% include "books/partials/status_badge.html" with status=chapter.status %}
                     <small class="text-muted">{{ chapter.word_count }} words</small>
-                    {% if chapter.abstract %}
-                        <span class="badge bg-info">Has Abstract</span>
+                    {% if chapter.summary %}
+                        <span class="badge bg-info">Has Summary</span>
                     {% endif %}
                     {% if chapter.key_terms %}
                         <span class="badge bg-secondary">Has Key Terms</span>

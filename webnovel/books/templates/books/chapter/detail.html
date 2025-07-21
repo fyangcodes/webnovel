@@ -101,7 +101,7 @@
                     <i class="fas fa-brain text-primary"></i> Analysis
                 </h3>
                 <button id="analyzeBtn" class="btn btn-primary" onclick="analyzeChapter()">
-                    <i class="fas fa-magic"></i> Analyze with AI
+                    <i class="fas fa-magic"></i> Analyze
                 </button>
             </div>
             <div class="card-body">
@@ -113,11 +113,24 @@
                 </div>
                 
                 <div id="analysisContent">
-                    {% if chapter.abstract %}
+                    {% if chapter.rating %}
+                    <div class="mb-3">
+                        <h5><i class="fas fa-user-shield text-warning"></i> Content Rating</h5>
+                        <span class="badge bg-secondary" style="font-size:1.1em;">
+                            {% if chapter.rating == 'everybody' %}Everybody
+                            {% elif chapter.rating == 'teen' %}Teen
+                            {% elif chapter.rating == 'mature' %}Mature
+                            {% elif chapter.rating == 'adult' %}Adult
+                            {% else %}{{ chapter.rating|capfirst }}{% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if chapter.summary %}
                     <div class="mb-4">
-                        <h5><i class="fas fa-file-alt text-info"></i> Abstract</h5>
+                        <h5><i class="fas fa-file-alt text-info"></i> Summary</h5>
                         <div class="chapter-abstract p-3 bg-light rounded">
-                            {{ chapter.abstract|markdown }}
+                            {{ chapter.summary|markdown }}
                         </div>
                     </div>
                     {% endif %}
@@ -133,10 +146,10 @@
                     </div>
                     {% endif %}
 
-                    {% if not chapter.abstract and not chapter.key_terms %}
+                    {% if not chapter.summary and not chapter.key_terms and not chapter.rating %}
                     <div class="text-center text-muted py-4">
                         <i class="fas fa-brain fa-3x mb-3"></i>
-                        <p>No analysis available yet. Click "Analyze with AI" to generate abstract and key terms.</p>
+                        <p>No analysis available yet. Click "Analyze with AI" to generate summary, key terms, and content rating.</p>
                     </div>
                     {% endif %}
                 </div>
