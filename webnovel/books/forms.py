@@ -1,8 +1,32 @@
 from django import forms
 from django.utils import timezone
-from datetime import datetime, timedelta
-from .models import BookFile, Chapter, Book
+from datetime import  timedelta
+from .models import BookFile, Chapter, Book, BookMaster
 
+
+class BookMasterForm(forms.ModelForm):
+    class Meta:
+        model = BookMaster
+        fields = [
+            "canonical_name",
+            "author",
+            "original_language",
+            "pivot_language",
+        ]
+        widgets = {
+            "author": forms.CheckboxSelectMultiple,
+        }
+
+class BookForm(forms.ModelForm):
+    class Meta:
+        model = Book    
+        fields = [
+            "title",
+            "language",
+            "description",
+            "cover_image",
+            "status",   
+        ]
 
 class BookFileForm(forms.ModelForm):
     class Meta:
@@ -110,17 +134,3 @@ class ChapterScheduleForm(forms.Form):
             raise forms.ValidationError("Publish date/time must be in the future")
 
         return publish_datetime
-
-
-class BookForm(forms.ModelForm):
-    class Meta:
-        model = Book
-        fields = [
-            "title",
-            "author",
-            "language",
-            "isbn",
-            "description",
-            "cover_image",
-            "status",
-        ]

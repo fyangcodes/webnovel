@@ -1,0 +1,25 @@
+{% extends "books/partials/base_books.html" %}
+
+{% block books_content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h2 class="card-title mb-0">Delete Book Master</h2>
+            </div>
+            <div class="card-body">
+                <p>Are you sure you want to delete <strong>{{ bookmaster.canonical_name }}</strong> and all its translations?</p>
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Confirm Delete
+                    </button>
+                    <a href="{% url 'books:bookmaster_detail' bookmaster.id %}" class="btn btn-secondary">
+                        Cancel
+                    </a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -1,47 +1,47 @@
 from django.db import models
 
 class RatingChoices(models.TextChoices):
-    EVERYONE = "E", "Everyone"
-    TEEN = "T", "Teen (13+)"
-    MATURE = "M", "Mature (16+)"
-    ADULT = "A", "Adult (18+)"
+    EVERYONE = "Everyone", "Everyone"
+    TEEN = "Teen", "Teen (13+)"
+    MATURE = "Mature", "Mature (16+)"
+    ADULT = "Adult", "Adult (18+)"
 
 class BookStatus(models.TextChoices):
-    DRAFT = "D", "Draft"
-    ONGOING = "O", "Ongoing"
-    COMPLETED = "C", "Completed"
-    ARCHIVED = "A", "Archived"
+    DRAFT = "Draft", "Draft"
+    ONGOING = "Ongoing", "Ongoing"
+    COMPLETED = "Completed", "Completed"
+    ARCHIVED = "Archived", "Archived"
 
 
 class MediaType(models.TextChoices):
-    IMAGE = "I", "Image"
-    AUDIO = "A", "Audio"
-    VIDEO = "V", "Video"
-    DOCUMENT = "D", "Document"
-    OTHER = "O", "Other"
+    IMAGE = "Image", "Image"
+    AUDIO = "Audio", "Audio"
+    VIDEO = "Video", "Video"
+    DOCUMENT = "Document", "Document"
+    OTHER = "Other", "Other"
 
 class ParagraphStyle(models.TextChoices):
-    SINGLE_NEWLINE = "S", "Single Newline"
-    DOUBLE_NEWLINE = "D", "Double Newline"
-    AUTO_DETECT = "A", "Auto Detect"
+    SINGLE_NEWLINE = "Single Newline", "Single Newline"
+    DOUBLE_NEWLINE = "Double Newline", "Double Newline"
+    AUTO_DETECT = "Auto Detect", "Auto Detect"
 
 
 class ChangeType(models.TextChoices):
-    TRANSLATION = "T", "Translation"
-    EDIT = "E", "Edit/Correction"
-    OTHER = "O", "Other"
+    TRANSLATION = "Translation", "Translation"
+    EDIT = "Edit", "Edit/Correction"
+    OTHER = "Other", "Other"
 
 
 class ProcessingStatus(models.TextChoices):
-    WAITING = "W", "Waiting"
-    PROCESSING = "P", "Processing"
-    COMPLETED = "C", "Completed"
-    FAILED = "F", "Failed"
+    PENDING = "Pending", "Pending"
+    PROCESSING = "Processing", "Processing"
+    COMPLETED = "Completed", "Completed"
+    FAILED = "Failed", "Failed"
 
 
 class ChapterStatus(models.TextChoices):
-    DRAFT = "D", "Draft"
-    TRANSLATING = "T", "Translating"
-    SCHEDULED = "S", "Scheduled"
-    PUBLISHED = "P", "Published"
-    ARCHIVED = "A", "Archived"
+    DRAFT = "Draft", "Draft"
+    TRANSLATING = "Translating", "Translating"
+    SCHEDULED = "Scheduled", "Scheduled"
+    PUBLISHED = "Published", "Published"
+    ARCHIVED = "Archived", "Archived"

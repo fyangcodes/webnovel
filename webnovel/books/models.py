@@ -71,10 +71,10 @@ from .constants import (
     VIDEO_EXTENSIONS,
     FILE_EXTENSIONS,
 )
-from .utils import (
+from .uploads import (
     book_cover_upload_to,
-    chapter_media_upload_to,
     book_file_upload_to,
+    chapter_media_upload_to,
 )
 from .validators import unicode_slug_validator
 
@@ -163,7 +163,7 @@ class BookMaster(AbstractMaster):
     It is also used to store the book's author and owner.
     """
 
-    author = models.ManyToManyField(AuthorMaster, related_name="books")
+    author = models.ForeignKey(AuthorMaster, on_delete=models.SET_NULL, null=True, blank=True, related_name="books")
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -172,10 +172,10 @@ class BookMaster(AbstractMaster):
         blank=True,
     )
     original_language = models.ForeignKey(
-        Language, on_delete=models.SET_NULL, null=True, blank=True
+        Language, on_delete=models.SET_NULL, null=True, blank=True, related_name="original_books"
     )
     pivot_language = models.ForeignKey(
-        Language, on_delete=models.SET_NULL, null=True, blank=True
+        Language, on_delete=models.SET_NULL, null=True, blank=True, related_name="pivot_books"
     )
     related_name_for_languages = "books"
 
@@ -282,10 +282,8 @@ class Book(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["owner", "status"]),
             models.Index(fields=["created_at"]),
             models.Index(fields=["language", "status"]),
-            models.Index(fields=["author", "status"]),
         ]
 
     def __str__(self):
@@ -390,7 +388,7 @@ class BookFile(TimeStampedModel):
     status = models.CharField(
         max_length=20,
         choices=ProcessingStatus.choices,
-        default=ProcessingStatus.WAITING,
+        default=ProcessingStatus.PENDING,
         help_text="Processing status of the file",
     )
     processing_progress = models.PositiveIntegerField(default=0)  # 0-100
@@ -867,7 +865,7 @@ class ChapterScheduleMixin(models.Model):
 
 class ChapterAIMixin(models.Model):
     rating = models.CharField(
-        max_length=5, choices=RatingChoices.choices, default=RatingChoices.EVERYONE
+        max_length=20, choices=RatingChoices.choices, default=RatingChoices.EVERYONE
     )
     summary = models.TextField(blank=True, help_text="Summary for translation context")
     key_terms = models.JSONField(
@@ -893,6 +891,8 @@ class Chapter(
     language = models.ForeignKey(
         Language,
         on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
         help_text="Language of this chapter (inherits from book if not specified)",
     )
     chapter_number = AutoIncrementingPositiveIntegerField(scope_field="book")

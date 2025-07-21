@@ -17,7 +17,7 @@
             </h5>
         </div>
         <div class="btn-group" role="group">
-            <a href="{% url 'books:book_list' %}" class="btn btn-outline-secondary">
+            <a href="{% url 'books:bookmaster_list' %}" class="btn btn-outline-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Books
             </a>
             <a href="{% url 'books:book_update' book.pk %}" class="btn btn-outline-primary">
@@ -88,60 +88,12 @@
                     <a href="{% url 'books:chapter_create' book.id %}" class="btn btn-success">
                         <i class="fas fa-plus"></i> Add Chapter
                     </a>
-                    <a href="{% url 'books:book_create_translation' book.id %}" class="btn btn-info">
-                        <i class="fas fa-language"></i> Create Translation
-                    </a>
-                    {% if book.original_book %}
-                        <a href="{% url 'books:book_detail' book.original_book.id %}" class="btn btn-outline-warning">
-                            <i class="fas fa-arrow-left"></i> View Original Book
-                        </a>
-                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-{% if book.has_translations %}
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h4><i class="fas fa-language"></i> Translations</h4>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    {% for translation in book.translations.all %}
-                        <div class="col-md-6 col-lg-4 mb-3">
-                            <div class="card border-info">
-                                <div class="card-body">
-                                    <h6 class="card-title">{{ translation.title }}</h6>
-                                    {% if translation.language %}
-                                        <span class="badge bg-info">{{ translation.language.name }}</span>
-                                    {% endif %}
-                                    <span class="badge bg-{{ translation.status|lower }} ms-1">
-                                        {{ translation.get_status_display }}
-                                    </span>
-                                    <p class="card-text mt-2">
-                                        <small class="text-muted">
-                                            Chapters: {{ translation.total_chapters }}<br>
-                                            Words: {{ translation.total_words|default:"0" }}
-                                        </small>
-                                    </p>
-                                    <a href="{% url 'books:book_detail' translation.id %}" 
-                                       class="btn btn-sm btn-outline-primary">
-                                        View Details
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <!-- Uploaded Files Section -->
 {% if book.files.exists %}

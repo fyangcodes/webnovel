@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     "imagekit",
     "storages",
     # Local apps
+    "common.apps.CommonConfig",
     "books.apps.BooksConfig",
     "collaboration.apps.CollaborationConfig",
     "llm_integration.apps.LlmIntegrationConfig",
