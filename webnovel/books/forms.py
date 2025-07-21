@@ -1,7 +1,7 @@
 from django import forms
 from django.utils import timezone
-from datetime import  timedelta
-from .models import BookFile, Chapter, Book, BookMaster
+from datetime import timedelta
+from .models import BookFile, Chapter, Book, BookMaster, ChapterMaster
 
 
 class BookMasterForm(forms.ModelForm):
@@ -13,20 +13,29 @@ class BookMasterForm(forms.ModelForm):
             "original_language",
             "pivot_language",
         ]
-        widgets = {
-            "author": forms.CheckboxSelectMultiple,
-        }
+
+
+class ChapterMasterForm(forms.ModelForm):
+    class Meta:
+        model = ChapterMaster
+        fields = [
+            "canonical_name",
+            "bookmaster",
+            "chapter_number",
+        ]
+
 
 class BookForm(forms.ModelForm):
     class Meta:
-        model = Book    
+        model = Book
         fields = [
             "title",
             "language",
             "description",
             "cover_image",
-            "status",   
+            "status",
         ]
+
 
 class BookFileForm(forms.ModelForm):
     class Meta:
@@ -39,9 +48,9 @@ class ChapterForm(forms.ModelForm):
     content = forms.CharField(
         widget=forms.Textarea(attrs={"rows": 20, "cols": 80}),
         required=False,
-        help_text="Chapter content"
+        help_text="Chapter content",
     )
-    
+
     class Meta:
         model = Chapter
         fields = ["title", "status", "active_at"]
@@ -57,12 +66,12 @@ class ChapterForm(forms.ModelForm):
         if not self.instance.pk:  # Only for new instances
             self.instance.key_terms = []
             self.instance.chapter_number = None
-        
+
         # Load raw content from S3 if available
-        if self.instance.pk and hasattr(self.instance, 'get_raw_content'):
-            raw_content = self.instance.get_raw_content()
+        if self.instance.pk and hasattr(self.instance, "get_raw_content"):
+            raw_content = self.instance.get_content("raw")
             if raw_content:
-                self.fields['content'].initial = raw_content
+                self.fields["content"].initial = raw_content
 
     def clean_active_at(self):
         active_at = self.cleaned_data.get("active_at")
@@ -80,32 +89,51 @@ class ChapterForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        
+
         # Ensure key_terms is set to empty list if not provided
-        if not hasattr(instance, 'key_terms') or instance.key_terms is None:
+        if not hasattr(instance, "key_terms") or instance.key_terms is None:
             instance.key_terms = []
-        
+
         # Ensure chapter_number is None for new instances
-        if not instance.pk and (not hasattr(instance, 'chapter_number') or instance.chapter_number is None):
+        if not instance.pk and (
+            not hasattr(instance, "chapter_number") or instance.chapter_number is None
+        ):
             instance.chapter_number = None
-        
+
+        # --- AUTO CREATE CHAPTERMASTER LOGIC ---
+        # Only for new chapters
+        if not instance.pk:
+            # If no chaptermaster is set, and this is the original language for the book
+            if not instance.chaptermaster_id:
+                book = instance.book
+                if book and book.language and book.bookmaster and book.bookmaster.original_language:
+                    if book.language_id == book.bookmaster.original_language_id:
+                        # Get the next chapter number for this bookmaster
+                        next_number = (ChapterMaster.objects.filter(bookmaster=book.bookmaster).count() + 1)  # type: ignore[attr-defined]
+                        chaptermaster = ChapterMaster.objects.create(  # type: ignore[attr-defined]
+                            canonical_name=instance.title,
+                            bookmaster=book.bookmaster,
+                            chapter_number=next_number
+                        )
+                        instance.chaptermaster = chaptermaster
+
         if commit:
             # Save the instance first to get an ID
             instance.save()
-            
+
             # Save raw content to S3
-            content_text = self.cleaned_data.get('content', '')
+            content_text = self.cleaned_data.get("content", "")
             if content_text:
                 try:
                     instance.save_raw_content(
-                        content_text, 
-                        user=getattr(self, 'user', None),
-                        summary="Content updated via form"
+                        content_text,
+                        user=getattr(self, "user", None),
+                        summary="Content updated via form",
                     )
                 except Exception as e:
                     # Log error but don't fail the form save
                     print(f"Error saving raw content to S3: {e}")
-        
+
         return instance
 
 

@@ -1,0 +1,30 @@
+{% extends "books/partials/base_books.html" %}
+
+{% block books_content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title mb-0">{{ chaptermaster.canonical_name }}</h2>
+            </div>
+            <div class="card-body">
+                <h4>Chapters</h4>
+                <ul class="list-group mb-3">
+                    {% for chapter in chapters %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                {{ chapter.language.name }} <strong>#{{ chapter.chaptermaster.chapter_number }}:</strong> {{ chapter.title }}
+                            </span>
+                            <span>
+                                <a href="{% url 'books:chapter_detail' chapter.id %}" class="btn btn-sm btn-outline-secondary">View</a>
+                            </span>
+                        </li>
+                    {% empty %}
+                        <li class="list-group-item">No chapters found for this chapter master.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

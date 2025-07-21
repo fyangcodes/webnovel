@@ -40,14 +40,7 @@
                         <li><a class="dropdown-item" href="{% url 'books:chapter_update' chapter.pk %}">
                             <i class="fas fa-edit"></i> Edit
                         </a></li>
-                        {% if chapter.status == 'draft' %}
-                            <li><a class="dropdown-item" href="{% url 'books:chapter_schedule' chapter.pk %}">
-                                <i class="fas fa-clock"></i> Schedule
-                            </a></li>
-                            <li><a class="dropdown-item" href="{% url 'books:chapter_publish_now' chapter.pk %}">
-                                <i class="fas fa-globe"></i> Publish Now
-                            </a></li>
-                        {% endif %}
+                        
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="{% url 'books:chapter_delete' chapter.pk %}">
                             <i class="fas fa-trash"></i> Delete

@@ -1,0 +1,2 @@
+docker-compose exec web python manage.py loaddata backups/backup_20250707_185418/db_001_accounts_user.json
+docker-compose exec web python manage.py loaddata backups/backup_20250707_185418/db_002_books_language.json

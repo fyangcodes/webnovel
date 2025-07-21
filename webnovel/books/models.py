@@ -204,16 +204,18 @@ class ChapterMaster(AbstractMaster):
     It is also used to store the chapter's book and language.
     """
 
-    book_master = models.ForeignKey(
-        BookMaster, on_delete=models.CASCADE, related_name="chapter_masters"
+    bookmaster = models.ForeignKey(
+        BookMaster, on_delete=models.CASCADE, related_name="chaptermasters"
     )
+    chapter_number = AutoIncrementingPositiveIntegerField(scope_field="bookmaster")
     related_name_for_languages = "chapters"
 
     class Meta:
-        ordering = ["canonical_name"]
+        ordering = ["chapter_number"]
         indexes = [
             models.Index(fields=["canonical_name"]),
-            models.Index(fields=["book_master"]),
+            models.Index(fields=["bookmaster"]),
+            models.Index(fields=["chapter_number"]),
         ]
 
 
@@ -256,7 +258,7 @@ class Book(TimeStampedModel):
         max_length=255, unique=True, blank=True, validators=[unicode_slug_validator]
     )
     description = models.TextField(blank=True)
-    master = models.ForeignKey(
+    bookmaster = models.ForeignKey(
         BookMaster, on_delete=models.CASCADE, related_name="books"
     )
     language = models.ForeignKey(
@@ -287,7 +289,7 @@ class Book(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.title} ({self.master.canonical_name})"
+        return f"{self.title} ({self.bookmaster.canonical_name})"
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -331,7 +333,7 @@ class Book(TimeStampedModel):
     @property
     def _root_directory(self):
         """Get the base directory for all book files"""
-        return f"books/{self.master.id}/{self.id}_{self.language.code}"
+        return f"books/{self.bookmaster.id}/{self.id}_{self.language.code}"
 
     @property
     def files_directory(self):
@@ -884,7 +886,7 @@ class Chapter(
     slug = models.CharField(
         max_length=255, blank=True, validators=[unicode_slug_validator]
     )
-    master = models.ForeignKey(
+    chaptermaster = models.ForeignKey(
         ChapterMaster, on_delete=models.CASCADE, related_name="chapters"
     )
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name="chapters")
@@ -895,16 +897,12 @@ class Chapter(
         null=True,
         help_text="Language of this chapter (inherits from book if not specified)",
     )
-    chapter_number = AutoIncrementingPositiveIntegerField(scope_field="book")
     excerpt = models.TextField(max_length=1000, blank=True)
     word_count = models.PositiveIntegerField(default=0)
     char_count = models.PositiveIntegerField(default=0)
 
     class Meta:
-        ordering = ["chapter_number"]
-        unique_together = ["book", "chapter_number"]
         indexes = [
-            models.Index(fields=["book", "chapter_number"]),
             models.Index(fields=["book", "status"]),
             models.Index(fields=["language", "status"]),
             models.Index(fields=["active_at", "status"]),
@@ -928,7 +926,7 @@ class Chapter(
 
     def generate_excerpt(self, max_length=200):
         """Generate an excerpt from the chapter raw content"""
-        raw_content = self.get_raw_content()
+        raw_content = self.get_content('raw')
         if not raw_content:
             return ""
 
@@ -962,7 +960,7 @@ class Chapter(
 
     def update_content_statistics(self):
         """Update word and character counts from raw content"""
-        raw_content = self.get_raw_content()
+        raw_content = self.get_content('raw')
         if raw_content:
             self.word_count = len(raw_content.split())
             self.char_count = len(raw_content)

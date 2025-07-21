@@ -38,13 +38,7 @@
     // Initialize translation data for JavaScript
     window.chapterId = {{ chapter.id }};
     window.availableLanguages = [];
-    {% for language in available_translation_languages %}
-        window.availableLanguages.push({
-            id: {{ language.id }}, 
-            name: "{{ language.name }}", 
-            code: "{{ language.code }}"
-        });
-    {% endfor %}
+    // Translation language JS setup removed
 </script>
 {% endblock %}
 
@@ -70,12 +64,8 @@
             <a href="{% url 'books:chapter_update' chapter.pk %}" class="btn btn-outline-primary">
                 <i class="fas fa-edit"></i> Edit
             </a>
-            <a href="{% url 'books:chapter_changelog' chapter.pk %}" class="btn btn-outline-info">
-                <i class="fas fa-history"></i> Changelog
-            </a>
-            <a href="{% url 'books:chapter_version_compare' chapter.pk %}" class="btn btn-outline-warning">
-                <i class="fas fa-exchange-alt"></i> Compare
-            </a>
+            
+            
             <a href="{% url 'books:chapter_delete' chapter.pk %}" class="btn btn-outline-danger">
                 <i class="fas fa-trash"></i> Delete
             </a>
@@ -92,11 +82,7 @@
                 <i class="fas fa-language"></i> Translation of Chapter {{ chapter.original_chapter.chapter_number }}
             </span>
         {% endif %}
-        {% if existing_translations %}
-            <span class="badge bg-success ms-1">
-                <i class="fas fa-language"></i> Has {{ existing_translations|length }} translation{{ existing_translations|length|pluralize }}
-            </span>
-        {% endif %}
+        {# Removed existing_translations badge #}
         <small class="text-muted ms-2">
             Words: {{ chapter.word_count }} • Characters: {{ chapter.char_count }}
             {% if chapter.scheduled_for %}
@@ -112,7 +98,7 @@
         <div class="card analysis-section mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h3 class="card-title mb-0">
-                    <i class="fas fa-brain text-primary"></i> AI Analysis
+                    <i class="fas fa-brain text-primary"></i> Analysis
                 </h3>
                 <button id="analyzeBtn" class="btn btn-primary" onclick="analyzeChapter()">
                     <i class="fas fa-magic"></i> Analyze with AI
@@ -283,7 +269,7 @@
                     </dd>
                     
                     <dt class="col-sm-6">Chapter Number:</dt>
-                    <dd class="col-sm-6">{{ chapter.chapter_number }}</dd>
+                    <dd class="col-sm-6">{{ chapter.chaptermaster.chapter_number }}</dd>
                     
                     <dt class="col-sm-6">Word Count:</dt>
                     <dd class="col-sm-6">{{ chapter.word_count }}</dd>
@@ -312,83 +298,7 @@
             </div>
         </div>
         
-        <!-- Translation Controls -->
-        {% include "books/partials/translation_controls.html" %}
         
-        {% if chapter.status == 'draft' %}
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5>Publishing Actions</h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        <a href="{% url 'books:chapter_schedule' chapter.pk %}" class="btn btn-warning">
-                            <i class="fas fa-clock"></i> Schedule Publication
-                        </a>
-                        <a href="{% url 'books:chapter_publish_now' chapter.pk %}" class="btn btn-success">
-                            <i class="fas fa-globe"></i> Publish Now
-                        </a>
-                    </div>
-                </div>
-            </div>
-        {% elif chapter.status == 'translating' %}
-            <div class="card mt-3 border-warning">
-                <div class="card-header bg-warning text-dark">
-                    <h5><i class="fas fa-language"></i> Translation in Progress</h5>
-                </div>
-                <div class="card-body">
-                    <div class="text-center">
-                        <div class="spinner-border text-warning mb-3" role="status">
-                            <span class="visually-hidden">Translating...</span>
-                        </div>
-                        <p class="text-warning mb-2">
-                            <strong>AI is currently translating this chapter...</strong>
-                        </p>
-                        <p class="text-muted small">
-                            This may take a few minutes depending on the chapter length. 
-                            The page will automatically refresh when translation is complete.
-                        </p>
-                        <button class="btn btn-outline-warning btn-sm" onclick="location.reload()">
-                            <i class="fas fa-sync-alt"></i> Check Status
-                        </button>
-                    </div>
-                </div>
-            </div>
-        {% elif chapter.status == 'error' %}
-            <div class="card mt-3 border-danger">
-                <div class="card-header bg-danger text-white">
-                    <h5><i class="fas fa-exclamation-triangle"></i> Translation Error</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-danger">
-                        <strong>Translation failed!</strong>
-                    </p>
-                    <p class="text-muted small">
-                        There was an error during the AI translation process. 
-                        You may need to try again or contact support.
-                    </p>
-                    <a href="{% url 'books:chapter_update' chapter.pk %}" class="btn btn-outline-danger btn-sm">
-                        <i class="fas fa-edit"></i> Edit Manually
-                    </a>
-                </div>
-            </div>
-        {% elif chapter.status == 'scheduled' %}
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5>Scheduled Publication</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-warning">
-                        <i class="fas fa-clock"></i> This chapter is scheduled for publication on {{ chapter.active_at|date:"M d, Y H:i" }}
-                    </p>
-                    <div class="d-grid">
-                        <a href="{% url 'books:chapter_publish_now' chapter.pk %}" class="btn btn-success">
-                            <i class="fas fa-globe"></i> Publish Now
-                        </a>
-                    </div>
-                </div>
-            </div>
-        {% endif %}
     </div>
 </div>
 

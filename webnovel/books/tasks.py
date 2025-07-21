@@ -1,7 +1,7 @@
 from celery import shared_task
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
-from .models import Chapter, BookFile, Language, ChangeLog
+from .models import Chapter, BookFile, Language, ChangeLog, ChapterMaster, BookMaster
 from .utils import extract_text_from_file
 from llm_integration.services import LLMTranslationService
 import logging
@@ -45,9 +45,16 @@ def process_bookfile_async(bookfile_id, user_id=None):
         for chapter_data in chapters_data:
             title = chapter_data.get("title", "Chapter")
             content_text = chapter_data["text"]
-            
-            # Create chapter without content first
+
+            # Create ChapterMaster first, linked to BookMaster
+            chaptermaster = ChapterMaster.objects.create(
+                canonical_name=title,
+                bookmaster=book.bookmaster
+            )
+
+            # Create Chapter linked to ChapterMaster and Book
             chapter = Chapter.objects.create(
+                chaptermaster=chaptermaster,
                 book=book,
                 title=title,
                 status="draft",
@@ -56,8 +63,9 @@ def process_bookfile_async(bookfile_id, user_id=None):
             
             # Save raw content to S3
             logger.info(f"Saving raw content to S3 for chapter {chapter.id}")
-            chapter.save_raw_content(
-                content_text, 
+            chapter.save_content_file(
+                content_type="raw",
+                content_data={"content": content_text},
                 user=user,
                 summary="Initial content from book file upload"
             )
@@ -91,8 +99,9 @@ def process_bookfile_async(bookfile_id, user_id=None):
                         if paragraph.strip():
                             structured_content.append({"type": "text", "content": paragraph.strip()})
             
-            chapter.save_structured_content(
-                structured_content,
+            chapter.save_content_file(
+                content_type="structured",
+                content_data=structured_content,
                 user=user,
                 summary="Initial structured content from book file upload"
             )
@@ -202,7 +211,7 @@ def translate_chapter_async(chapter_id, target_language_code):
 
         # Step 2: Translate content
         logger.info(f"Translating content for chapter {chapter_id}")
-        original_raw_content = original_chapter.get_raw_content()  # Use raw content from S3
+        original_raw_content = original_chapter.get_content('raw')  # Use raw content from S3
         translated_content = llm_service.translate_chapter(
             original_raw_content, target_language_code
         )

@@ -8,7 +8,7 @@ from django.urls import reverse_lazy
 from ..models import Book, BookMaster, Language
 from ..forms import BookForm, BookFileForm
 from ..tasks import process_bookfile_async
-
+from ..choices import ChapterStatus
 
 # Book CRUD Views
 class BookCreateView(LoginRequiredMixin, CreateView):
@@ -23,11 +23,11 @@ class BookCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.owner = self.request.user
-        # Set the master field from the URL kwarg
+        # Set the bookmaster field from the URL kwarg
         bookmaster_pk = self.kwargs.get("bookmaster_pk")
         if bookmaster_pk:
             bookmaster = get_object_or_404(BookMaster, pk=bookmaster_pk)
-            form.instance.master = bookmaster
+            form.instance.bookmaster = bookmaster
             # Determine the language: GET/POST param or default to original
             language_id = self.request.GET.get("language") or self.request.POST.get(
                 "language"
@@ -44,9 +44,9 @@ class BookCreateView(LoginRequiredMixin, CreateView):
             else:
                 requested_language = bookmaster.original_language
             form.instance.language = requested_language
-            # Check if a book in the requested language already exists for this master
+            # Check if a book in the requested language already exists for this bookmaster
             if Book.objects.filter(
-                master=bookmaster, language=requested_language
+                bookmaster=bookmaster, language=requested_language
             ).exists():
                 messages.warning(
                     self.request,
@@ -62,22 +62,22 @@ class BookDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "book"
 
     def get_queryset(self):
-        return Book.objects.filter(master__owner=self.request.user)
+        return Book.objects.filter(bookmaster__owner=self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["chapters"] = self.object.chapters.all().order_by("chapter_number")
+        context["chapters"] = self.object.chapters.all().order_by("chaptermaster__chapter_number")
         context["published_chapters"] = self.object.chapters.filter(
-            status="published"
-        ).order_by("chapter_number")
+            status=ChapterStatus.PUBLISHED
+        ).order_by("chaptermaster__chapter_number")
         context["scheduled_chapters"] = self.object.chapters.filter(
-            status="scheduled"
-        ).order_by("chapter_number")
+            status=ChapterStatus.SCHEDULED
+        ).order_by("chaptermaster__chapter_number")
         context["draft_chapters"] = self.object.chapters.filter(
-            status="draft"
-        ).order_by("chapter_number")
+            status=ChapterStatus.DRAFT
+        ).order_by("chaptermaster__chapter_number")
         context["chapter_create_url"] = reverse_lazy(
-            "books:chapter_create", kwargs={"book_id": self.object.pk}
+            "books:chapter_create", kwargs={"book_pk": self.object.pk}
         )
         return context
 
@@ -101,7 +101,7 @@ class BookDeleteView(LoginRequiredMixin, DeleteView):
     template_name = "books/book/confirm_delete.html"
 
     def get_queryset(self):
-        return Book.objects.filter(master__owner=self.request.user)
+        return Book.objects.filter(bookmaster__owner=self.request.user)
 
     def delete(self, request, *args, **kwargs):
         book = self.get_object()
@@ -113,7 +113,7 @@ class BookDeleteView(LoginRequiredMixin, DeleteView):
 
     def get_success_url(self):
         return reverse_lazy(
-            "books:bookmaster_detail", kwargs={"pk": self.object.master.pk}
+            "books:bookmaster_detail", kwargs={"pk": self.object.bookmaster.pk}
         )
 
 class BookFileUploadView(LoginRequiredMixin, FormView):
@@ -123,13 +123,13 @@ class BookFileUploadView(LoginRequiredMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["book"] = get_object_or_404(
-            Book, pk=self.kwargs["pk"], master__owner=self.request.user
+            Book, pk=self.kwargs["pk"], bookmaster__owner=self.request.user
         )
         return context
 
     def form_valid(self, form):
         book = get_object_or_404(
-            Book, pk=self.kwargs["pk"], master__owner=self.request.user
+            Book, pk=self.kwargs["pk"], bookmaster__owner=self.request.user
         )
         book_file = form.save(commit=False)
         book_file.book = book
